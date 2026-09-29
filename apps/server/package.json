@@ -9,6 +9,7 @@
                          "@modelcontextprotocol/sdk":  "1.29.0",
                          "fastify":  "^5.6.1",
                          "@dc-manager/database":  "*",
-                         "@dc-manager/worker-manager":  "*"
+                         "@dc-manager/worker-manager":  "*",
+                         "@fastify/static":  "^10.1.5"
                      }
 }

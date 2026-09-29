@@ -1,4 +1,7 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import type { ManagerDatabase } from '@dc-manager/database'
+import fastifyStatic from '@fastify/static'
 import Fastify from 'fastify'
 
 export interface ManagementActions {
@@ -11,6 +14,7 @@ type Options = {
   database: ManagerDatabase
   actions: ManagementActions
   port?: number
+  dashboardDir?: string
 }
 
 export async function createManagementApi(options: Options): Promise<{ url: string; close(): Promise<void> }> {
@@ -29,6 +33,10 @@ export async function createManagementApi(options: Options): Promise<{ url: stri
       await options.actions[action](id)
       return options.database.workers.getWorker(id)
     })
+  }
+
+  if (options.dashboardDir && existsSync(options.dashboardDir)) {
+    await app.register(fastifyStatic, { root: resolve(options.dashboardDir), prefix: '/' })
   }
 
   const address = await app.listen({ host: '127.0.0.1', port: options.port ?? 8788 })

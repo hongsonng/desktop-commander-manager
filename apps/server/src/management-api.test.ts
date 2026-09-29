@@ -29,9 +29,24 @@ describe('management API', () => {
     } finally { await api.close(); db.close() }
   })
 
+  it('serves the production dashboard from the same management origin', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-dashboard-static-')); roots.push(root)
+    const dashboardDir = join(root, 'dist')
+    const { mkdirSync, writeFileSync } = await import('node:fs')
+    mkdirSync(dashboardDir, { recursive: true })
+    writeFileSync(join(dashboardDir, 'index.html'), '<!doctype html><title>DCM_TEST_MARKER</title>')
+    const db = createDatabase(join(root, 'db.sqlite'))
+    const api = await createManagementApi({ database: db, port: 0, dashboardDir, actions: { async restart() {}, async enable() {}, async disable() {} } })
+    try {
+      const response = await fetch(`${api.url}/`)
+      expect(response.status).toBe(200)
+      expect(await response.text()).toContain('DCM_TEST_MARKER')
+    } finally { await api.close(); db.close() }
+  })
   it('returns 404 for unknown worker without invoking actions', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-api-')); roots.push(root); const db = createDatabase(join(root, 'db.sqlite')); const calls: string[] = []
     const api = await createManagementApi({ database: db, port: 0, actions: { async restart(id) { calls.push(id) }, async enable(id) { calls.push(id) }, async disable(id) { calls.push(id) } } })
     try { expect((await fetch(`${api.url}/api/workers/missing/restart`, { method: 'POST' })).status).toBe(404); expect(calls).toEqual([]) } finally { await api.close(); db.close() }
   })
 })
+

@@ -1,5 +1,5 @@
-import { mkdirSync } from 'node:fs'
-import { dirname } from 'node:path'
+import { existsSync, mkdirSync } from 'node:fs'
+import { dirname, resolve } from 'node:path'
 import { createDatabase, type ManagerDatabase } from '@dc-manager/database'
 import { WorkerClient, type ProxyWorkerClient } from '@dc-manager/mcp-proxy'
 import { RetryPolicy, SessionRouter, UpstreamCallError } from '@dc-manager/router'
@@ -86,7 +86,9 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       await workerManager.disableWorker(id)
     },
   }
-  const managementRuntime = await createManagementApi({ database, actions, port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT })
+  const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
+  const dashboardDir = config.dashboardDir ?? (existsSync(defaultDashboardDir) ? defaultDashboardDir : undefined)
+  const managementRuntime = await createManagementApi({ database, actions, port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT, dashboardDir })
   let closed = false
 
   return {
@@ -103,3 +105,4 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     },
   }
 }
+

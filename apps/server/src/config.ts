@@ -3,6 +3,7 @@ export interface ManagerConfig {
   runtimeRoot: string
   mcpPort?: number
   managementPort?: number
+  dashboardDir?: string
 }
 
 export const DEFAULT_MCP_PORT = 8787
