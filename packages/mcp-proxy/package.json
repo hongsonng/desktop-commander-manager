@@ -1,0 +1,11 @@
+{
+  "name": "@dc-manager/mcp-proxy",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@dc-manager/router": "*",
+    "@dc-manager/worker-manager": "*",
+    "@modelcontextprotocol/sdk": "1.29.0"
+  }
+}
