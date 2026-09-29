@@ -82,6 +82,16 @@ export class WorkerManager {
     this.requireWorker(id)
     this.options.database.workers.setWorkerState(id, { status: 'BUSY' })
   }
+  async degradeWorker(id: string, message: string): Promise<void> {
+    const current = this.requireWorker(id)
+    const handle = this.handles.get(id)
+    if (handle) {
+      this.intentionalStops.add(id)
+      try { await handle.stop() } finally { this.handles.delete(id) }
+    }
+    this.options.database.workers.setWorkerState(id, { status: 'DEGRADED', pid: null, failureCount: current.failureCount + 1 })
+    this.event(id, 'WORKER_DEGRADED', message)
+  }
 
   getHealthyWorkers(): WorkerDescriptor[] {
     return this.options.database.workers.listWorkers()

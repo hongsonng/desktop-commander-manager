@@ -1,0 +1,18 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["node"]
+  },
+  "include": [
+    "packages/*/src/**/*.ts",
+    "apps/server/src/**/*.ts",
+    "apps/dashboard/src/**/*.ts",
+    "apps/dashboard/src/**/*.tsx"
+  ],
+  "exclude": ["**/*.test.ts", "**/*.test.tsx"]
+}

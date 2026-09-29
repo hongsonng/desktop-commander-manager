@@ -3,6 +3,37 @@ import { appendFileSync, mkdirSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { PassThrough, type Readable, type Writable } from 'node:stream'
 
+const DESKTOP_COMMANDER_ARGS = ['-y', '@wonderwhy-er/desktop-commander@latest', '--no-onboarding'] as const
+
+export function desktopCommanderSpawnSpec(platform: NodeJS.Platform | string, env: NodeJS.ProcessEnv): { command: string; args: string[] } {
+  if (platform === 'win32') {
+    const systemRoot = env.SystemRoot ?? 'C:\\Windows'
+    const command = env.ComSpec ?? env.COMSPEC ?? join(systemRoot, 'System32', 'cmd.exe')
+    return { command, args: ['/d', '/s', '/c', 'npx', ...DESKTOP_COMMANDER_ARGS] }
+  }
+  return { command: 'npx', args: [...DESKTOP_COMMANDER_ARGS] }
+}
+export function processTreeKillSpec(platform: NodeJS.Platform | string, pid: number, env: NodeJS.ProcessEnv): { command: string; args: string[] } | undefined {
+  if (platform !== 'win32') return undefined
+  const systemRoot = env.SystemRoot ?? 'C:\\Windows'
+  return {
+    command: join(systemRoot, 'System32', 'taskkill.exe'),
+    args: ['/PID', String(pid), '/T', '/F'],
+  }
+}
+
+async function killProcessTree(pid: number): Promise<boolean> {
+  const spec = processTreeKillSpec(process.platform, pid, process.env)
+  if (!spec) return false
+  await new Promise<void>((resolveKill) => {
+    const killer = spawn(spec.command, spec.args, { stdio: 'ignore', windowsHide: true })
+    let settled = false
+    const done = () => { if (!settled) { settled = true; resolveKill() } }
+    killer.once('error', done)
+    killer.once('exit', done)
+  })
+  return true
+}
 export interface WorkerExit {
   code: number | null
   signal: NodeJS.Signals | null
@@ -37,8 +68,8 @@ export function createDesktopCommanderProcessFactory(): DesktopCommanderProcessF
       mkdirSync(join(root, 'temp'), { recursive: true })
       mkdirSync(logs, { recursive: true })
 
-      const command = process.platform === 'win32' ? 'npx.cmd' : 'npx'
-      const child = spawn(command, ['-y', '@wonderwhy-er/desktop-commander@latest', '--no-onboarding'], {
+      const spawnSpec = desktopCommanderSpawnSpec(process.platform, process.env)
+      const child = spawn(spawnSpec.command, spawnSpec.args, {
         env: buildWorkerEnvironment(root),
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -66,10 +97,11 @@ export function createDesktopCommanderProcessFactory(): DesktopCommanderProcessF
         stderr,
         exited,
         async stop() {
-          if (child.exitCode !== null) return
-          child.kill()
+          if (child.exitCode !== null || child.signalCode !== null) return
+          const killedTree = await killProcessTree(child.pid!)
+          if (!killedTree) child.kill()
           await Promise.race([exited, new Promise((resolveWait) => setTimeout(resolveWait, 2000))])
-          if (child.exitCode === null) child.kill('SIGKILL')
+          if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL')
         },
       }
     },

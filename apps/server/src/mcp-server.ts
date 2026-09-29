@@ -106,8 +106,8 @@ export async function createMcpHttpServer(deps: McpHttpServerDeps): Promise<{ ur
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: randomUUID,
           enableJsonResponse: true,
-          onsessioninitialized: (sessionId) => sessions.set(sessionId, { transport, server }),
-          onsessionclosed: (sessionId) => sessions.delete(sessionId),
+          onsessioninitialized: (sessionId) => { sessions.set(sessionId, { transport, server }) },
+          onsessionclosed: (sessionId) => { sessions.delete(sessionId) },
         })
         runtime = { transport, server }
         allSessions.add(runtime)

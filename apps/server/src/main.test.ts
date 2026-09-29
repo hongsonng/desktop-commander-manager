@@ -46,9 +46,14 @@ describe('startManager', () => {
     expect(runtime.database.workers.listWorkers().map((w) => w.id)).toEqual(['worker-1', 'worker-2']); await runtime.close()
   })
 
-  it('marks a worker degraded when its MCP handshake fails', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root); const clients = new FakeWorkerClients(); clients.failWorkerId = 'worker-2'
-    const runtime = await startManager({ databasePath: join(root, 'manager.db'), runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: new FakeProcesses(), workerClientFactory: clients })
-    expect(runtime.database.workers.getWorker('worker-1')?.status).toBe('READY'); expect(runtime.database.workers.getWorker('worker-2')?.status).toBe('DEGRADED'); await runtime.close()
+  it('marks a worker degraded and stops its process when MCP handshake fails', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    const clients = new FakeWorkerClients(); clients.failWorkerId = 'worker-2'
+    const processes = new FakeProcesses()
+    const runtime = await startManager({ databasePath: join(root, 'manager.db'), runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: processes, workerClientFactory: clients })
+    expect(runtime.database.workers.getWorker('worker-1')?.status).toBe('READY')
+    expect(runtime.database.workers.getWorker('worker-2')?.status).toBe('DEGRADED')
+    expect(processes.stopped).toContain(501)
+    await runtime.close()
   })
 })

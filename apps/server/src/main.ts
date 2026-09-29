@@ -51,9 +51,9 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       clients.set(workerId, client)
       workerManager.markReady(workerId)
     } catch (error) {
-      const current = database.workers.getWorker(workerId)
-      if (current) database.workers.setWorkerState(workerId, { status: 'DEGRADED', pid: handle.pid, failureCount: current.failureCount + 1 })
-      database.events.appendEvent({ sessionId: null, workerId, type: 'WORKER_HANDSHAKE_FAILED', message: error instanceof Error ? error.message : String(error), metadataJson: null, createdAt: new Date().toISOString() })
+      const message = error instanceof Error ? error.message : String(error)
+      await workerManager.degradeWorker(workerId, message)
+      database.events.appendEvent({ sessionId: null, workerId, type: 'WORKER_HANDSHAKE_FAILED', message, metadataJson: null, createdAt: new Date().toISOString() })
     }
   }
 
@@ -61,7 +61,16 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     try { await connectWorker(worker.id, await workerManager.startWorker(worker.id)) } catch { /* WorkerManager persisted OFFLINE */ }
   }
 
-  const sessionRouter = new SessionRouter({ database, workerManager })
+  const recoverWorker = async (workerId: string): Promise<void> => {
+    await clients.get(workerId)?.close().catch(() => undefined)
+    clients.delete(workerId)
+    await connectWorker(workerId, await workerManager.restartWorker(workerId))
+  }
+  const routableWorkers = {
+    getHealthyWorkers: () => workerManager.getHealthyWorkers(),
+    restartWorker: recoverWorker,
+  }
+  const sessionRouter = new SessionRouter({ database, workerManager: routableWorkers })
   const retryPolicy = new RetryPolicy()
   const mcpRuntime = await createMcpHttpServer({
     host: '127.0.0.1', port: config.mcpPort ?? DEFAULT_MCP_PORT, sessionRouter, retryPolicy,
@@ -74,8 +83,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
 
   const actions = {
     async restart(id: string) {
-      await clients.get(id)?.close().catch(() => undefined); clients.delete(id)
-      await connectWorker(id, await workerManager.restartWorker(id))
+      await recoverWorker(id)
     },
     async enable(id: string) {
       workerManager.enableWorker(id)
@@ -105,4 +113,3 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     },
   }
 }
-

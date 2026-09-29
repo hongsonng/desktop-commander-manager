@@ -7,11 +7,16 @@
                        "packages/*"
                    ],
     "scripts":  {
-                    "test":  "vitest run"
+                    "test":  "vitest run",
+                    "test:integration":  "vitest run tests/integration",
+                    "dev":  "tsx apps/server/src/cli.ts",
+                    "build":  "tsc -p tsconfig.json \u0026\u0026 npm run build -w apps/dashboard",
+                    "smoke:windows":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1"
                 },
     "devDependencies":  {
                             "typescript":  "^5.9.3",
                             "vitest":  "^5.0.2",
-                            "@types/node":  "^22.18.6"
+                            "@types/node":  "^22.18.6",
+                            "tsx":  "^4.23.15"
                         }
 }
