@@ -1,0 +1,16 @@
+{
+    "name":  "desktop-commander-manager",
+    "private":  true,
+    "type":  "module",
+    "workspaces":  [
+                       "apps/*",
+                       "packages/*"
+                   ],
+    "scripts":  {
+                    "test":  "vitest run"
+                },
+    "devDependencies":  {
+                            "typescript":  "^5.9.3",
+                            "vitest":  "^5.0.2"
+                        }
+}
