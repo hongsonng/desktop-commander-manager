@@ -21,10 +21,18 @@ export interface RemoteAccountActions {
   rotate(): Promise<RemoteAccountRecord>
 }
 
+export interface ConnectionInfo {
+  mode: 'direct-local'
+  mcpUrl: string
+  hostedRemoteAccountRequired: false
+  workerStrategy: 'sticky-failover'
+}
+
 type Options = {
   database: ManagerDatabase
   actions: ManagementActions
   remoteAccounts?: RemoteAccountActions
+  connectionInfo?: ConnectionInfo
   port?: number
   dashboardDir?: string
 }
@@ -34,6 +42,12 @@ export async function createManagementApi(options: Options): Promise<{ url: stri
   const startedAt = Date.now()
 
   app.get('/api/health', async () => ({ status: 'ok', startedAt: new Date(startedAt).toISOString(), uptimeMs: Date.now() - startedAt }))
+  app.get('/api/connection', async () => options.connectionInfo ?? ({
+    mode: 'direct-local',
+    mcpUrl: 'http://127.0.0.1:8787/mcp',
+    hostedRemoteAccountRequired: false,
+    workerStrategy: 'sticky-failover',
+  } satisfies ConnectionInfo))
   app.get('/api/workers', async () => options.database.workers.listWorkers().map((worker) => ({ ...worker, activeSessionCount: options.database.sessions.countByWorker(worker.id) })))
   app.get('/api/sessions', async () => options.database.sessions.listSessions())
   app.get('/api/events', async () => options.database.events.listEvents())

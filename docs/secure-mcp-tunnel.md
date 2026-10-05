@@ -14,6 +14,8 @@ Official guide: https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
 
 ## Configure the tunnel
 
+This is a one-time setup. After the `desktop-commander-manager` tunnel profile works once, `install-autostart.bat` can register `DesktopCommanderTunnel` so the profile starts automatically at Windows logon together with the manager.
+
 Start with the current CLI help because tunnel-client flags may evolve:
 
 ```powershell
@@ -34,6 +36,8 @@ Validate before connecting ChatGPT:
 tunnel-client doctor --profile desktop-commander-manager --explain
 tunnel-client run --profile desktop-commander-manager
 ```
+
+After that first successful validation, stop the foreground tunnel and run `install-autostart.bat` again. If `tunnel-client` is discoverable in `PATH`, the installer registers and starts the tunnel task automatically. The headless tunnel runner waits for manager health and reconnects the tunnel if it exits.
 
 The tunnel is outbound-only: the local machine needs HTTPS access to OpenAI and local access to `127.0.0.1:8787`; the MCP router does not need an inbound internet-facing listener.
 

@@ -120,7 +120,19 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
 
   const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
   const dashboardDir = config.dashboardDir ?? (existsSync(defaultDashboardDir) ? defaultDashboardDir : undefined)
-  const managementRuntime = await createManagementApi({ database, actions, remoteAccounts, port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT, dashboardDir })
+  const managementRuntime = await createManagementApi({
+    database,
+    actions,
+    remoteAccounts,
+    connectionInfo: {
+      mode: 'direct-local',
+      mcpUrl: mcpRuntime.url,
+      hostedRemoteAccountRequired: false,
+      workerStrategy: 'sticky-failover',
+    },
+    port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT,
+    dashboardDir,
+  })
   let closed = false
 
   return {

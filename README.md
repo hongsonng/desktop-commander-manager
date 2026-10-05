@@ -12,9 +12,11 @@ Windows-first MCP router and Remote Desktop Commander profile manager.
 - Rebinds a conversation only when recovery fails and another healthy worker exists.
 - Never blindly replays a tool call when upstream acknowledgement is ambiguous.
 - Serves a local operations dashboard and management API on `http://127.0.0.1:8788`.
-- Manages multiple isolated Desktop Commander **Remote Device account profiles** and can activate or rotate them one at a time.
+- Exposes a **direct-local ChatGPT path**: ChatGPT → OpenAI Secure MCP Tunnel → this manager → local Desktop Commander workers.
+- Keeps one stable MCP endpoint while worker routing, restart, and failover happen behind the manager.
+- Manages multiple isolated Desktop Commander **Remote Device account profiles** as an optional hosted-RDC feature.
 
-The Remote account manager does **not** pool hosted Remote MCP quotas behind one ChatGPT OAuth connection. Each Remote Device profile still belongs to the Desktop Commander account used during its own OAuth pairing flow.
+For the recommended direct-local ChatGPT path, a hosted Desktop Commander account is **not required**. Hosted Remote Device profiles are separate: the official hosted relay scopes both the AI connector and paired device to the same Desktop Commander account, so rotating a local hosted profile cannot silently change the OAuth identity already held by ChatGPT.
 
 ## Requirements
 
@@ -25,7 +27,25 @@ The Remote account manager does **not** pool hosted Remote MCP quotas behind one
 
 ## Cách chạy nhanh
 
-Cách đơn giản nhất trên Windows là double-click file:
+### Khuyến nghị: cài tự khởi động một lần
+
+Double-click:
+
+```text
+install-autostart.bat
+```
+
+Script sẽ tự `npm install`, build dashboard, đăng ký Windows Task Scheduler và khởi động manager ngay. Từ những lần đăng nhập Windows sau, manager chạy headless tự động. Nếu `tunnel-client` đã có trên máy, script cũng đăng ký Secure MCP Tunnel chạy cùng Windows.
+
+Để gỡ autostart:
+
+```text
+uninstall-autostart.bat
+```
+
+### Chạy tay / debug
+
+Double-click:
 
 ```text
 start-manager.bat
@@ -58,6 +78,17 @@ npm run dev
 
 Biến `ComSpec` được đặt rõ ràng vì một số terminal/automation environment trên Windows có thể không truyền biến này cho npm lifecycle scripts.
 
+### Autostart hoạt động như thế nào
+
+- Task `DesktopCommanderManager` chạy `scripts/run-manager-headless.ps1` khi user đăng nhập Windows.
+- Runner kiểm tra health trước để không tạo instance trùng.
+- Nếu manager crash, runner tự thử khởi động lại tối đa 10 lần, mỗi lần cách 5 giây.
+- Log manager: `data/logs/manager-autostart.log`.
+- Nếu có `tunnel-client`, task `DesktopCommanderTunnel` chạy `scripts/run-tunnel-headless.ps1`.
+- Tunnel runner chờ manager healthy, kiểm tra profile `desktop-commander-manager`, rồi tự reconnect nếu tunnel process dừng.
+- Log tunnel: `data/logs/tunnel-autostart.log`.
+- Không có API key/secret nào được ghi vào repo; tunnel dùng credential/environment mà `tunnel-client` đã được cấu hình bên ngoài repo.
+
 ## Runtime layout
 
 ```text
@@ -89,7 +120,9 @@ data/
 
 Runtime DBs, worker homes, Remote account profiles, logs, build output, worktrees, and Superpowers scratch state are ignored by Git.
 
-## Remote account rotation
+## Optional: hosted Remote Desktop Commander profiles
+
+This section is **not required** for the recommended direct-local ChatGPT connection. Use it only when you also want to run Desktop Commander's hosted Remote MCP device profiles.
 
 1. Start the manager and open `http://127.0.0.1:8788/`.
 2. Under **Remote accounts**, add an account id and display name.
@@ -122,6 +155,7 @@ For requests where it is unknown whether the upstream worker already began execu
 Management API:
 
 - `GET /api/health`
+- `GET /api/connection`
 - `GET /api/workers`
 - `GET /api/sessions`
 - `GET /api/events`
@@ -153,14 +187,26 @@ Remote account unit/integration tests use fake process factories so automated ve
 
 ## Connect ChatGPT privately
 
+Recommended flow:
+
+```text
+ChatGPT
+  → OpenAI Secure MCP Tunnel
+  → http://127.0.0.1:8787/mcp
+  → Desktop Commander Manager
+  → local Desktop Commander worker
+```
+
+Configure the ChatGPT developer-mode connector/tunnel **once**. After that, keep the same ChatGPT connector and MCP endpoint; worker restarts and failover happen behind the manager without changing ChatGPT OAuth accounts.
+
 Use OpenAI Secure MCP Tunnel rather than exposing port 8787 to the public internet. See [`docs/secure-mcp-tunnel.md`](docs/secure-mcp-tunnel.md).
 
-For local protocol debugging, point MCP Inspector at `http://127.0.0.1:8787/mcp` while `npm run dev` is running.
+For local protocol debugging, point MCP Inspector at `http://127.0.0.1:8787/mcp` while the manager is running.
 
 ## Current MVP limits
 
 - One Windows machine.
-- Remote Device profile switching only; no transparent hosted-account quota pooling.
-- No automatic quota detection because the Remote Device CLI does not expose a stable quota API here.
+- The direct-local path still needs a one-time ChatGPT Secure MCP Tunnel/connector setup.
+- Hosted Remote Device account rotation is separate and cannot replace the OAuth identity already authorized by a hosted RDC connector.
 - No Tauri/system-tray packaging yet.
 - No OS security sandbox between workers/profiles; isolation is process/runtime-state separation.
