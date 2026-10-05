@@ -37,7 +37,7 @@ tunnel-client doctor --profile desktop-commander-manager --explain
 tunnel-client run --profile desktop-commander-manager
 ```
 
-After that first successful validation, stop the foreground tunnel and run `install-autostart.bat` again. If `tunnel-client` is discoverable in `PATH`, the installer registers and starts the tunnel task automatically. The headless tunnel runner waits for manager health and reconnects the tunnel if it exits.
+After that first successful validation, stop the foreground tunnel and run `install-autostart.bat` again. If `tunnel-client` is discoverable in `PATH`, the installer registers and starts the tunnel autostart entry automatically. It prefers Task Scheduler and falls back to the per-user HKCU Run key when Task Scheduler is denied. The headless tunnel runner waits for manager health and reconnects the tunnel if it exits.
 
 The tunnel is outbound-only: the local machine needs HTTPS access to OpenAI and local access to `127.0.0.1:8787`; the MCP router does not need an inbound internet-facing listener.
 

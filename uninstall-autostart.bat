@@ -21,7 +21,7 @@ echo !CYAN!!BOLD!==============================================================!
 echo.
 
 if not exist "node_modules\.package-lock.json" (
-    echo !YELLOW![!] Chưa có dependencies, chạy npm install để dùng CLI gỡ task.!RESET!
+    echo !YELLOW![!] Chưa có dependencies, chạy npm install để dùng CLI gỡ autostart.!RESET!
     call npm install
     if errorlevel 1 goto :failed
 )
@@ -30,7 +30,7 @@ call npm run autostart:uninstall
 if errorlevel 1 goto :failed
 
 echo.
-echo !GREEN!!BOLD!Đã gỡ các task tự khởi động của manager và tunnel.!RESET!
+echo !GREEN!!BOLD!Đã gỡ các entry tự khởi động của manager và tunnel.!RESET!
 echo !YELLOW!Các process đang chạy hiện tại không bị kill; đóng chúng nếu bạn muốn dừng ngay.!RESET!
 echo.
 pause
@@ -38,7 +38,7 @@ exit /b 0
 
 :failed
 echo.
-echo !RED!!BOLD!Không thể gỡ task tự khởi động. Xem lỗi phía trên.!RESET!
+echo !RED!!BOLD!Không thể gỡ autostart. Xem lỗi phía trên.!RESET!
 echo.
 pause
 exit /b 1
