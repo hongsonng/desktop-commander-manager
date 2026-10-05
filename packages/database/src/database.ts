@@ -1,5 +1,5 @@
 import { DatabaseSync } from 'node:sqlite'
-import type { EventRecord, SessionBinding, WorkerRecord, WorkerStatus } from '@dc-manager/shared'
+import type { EventRecord, RemoteAccountRecord, SessionBinding, WorkerRecord, WorkerStatus } from '@dc-manager/shared'
 import { SCHEMA_SQL } from './schema.js'
 
 type EventInput = Omit<EventRecord, 'id'>
@@ -13,9 +13,18 @@ type WorkerStatePatch = {
 function mapWorker(row: Record<string, unknown>): WorkerRecord {
   return {
     id: String(row.id), name: String(row.name), enabled: Boolean(row.enabled),
-    status: row.status as WorkerStatus, pid: row.pid == null ? null : Number(row.pid),
+    status: row.status as WorkerRecord['status'], pid: row.pid == null ? null : Number(row.pid),
     failureCount: Number(row.failure_count), lastHeartbeatAt: row.last_heartbeat_at == null ? null : String(row.last_heartbeat_at),
     createdAt: String(row.created_at), updatedAt: String(row.updated_at),
+  }
+}
+
+function mapRemoteAccount(row: Record<string, unknown>): RemoteAccountRecord {
+  return {
+    id: String(row.id), name: String(row.name), enabled: Boolean(row.enabled),
+    status: row.status as RemoteAccountRecord['status'], pid: row.pid == null ? null : Number(row.pid),
+    profileDir: String(row.profile_dir), lastStartedAt: row.last_started_at == null ? null : String(row.last_started_at),
+    lastUsedAt: row.last_used_at == null ? null : String(row.last_used_at), createdAt: String(row.created_at), updatedAt: String(row.updated_at),
   }
 }
 
@@ -36,6 +45,11 @@ export interface ManagerDatabase {
     listWorkers(): WorkerRecord[]
     upsertWorker(worker: WorkerRecord): void
     setWorkerState(id: string, patch: WorkerStatePatch): void
+  }
+  remoteAccounts: {
+    getAccount(id: string): RemoteAccountRecord | undefined
+    listAccounts(): RemoteAccountRecord[]
+    upsertAccount(account: RemoteAccountRecord): void
   }
   sessions: {
     getSession(sessionId: string): SessionBinding | undefined
@@ -62,6 +76,11 @@ export function createDatabase(path: string): ManagerDatabase {
   const upsertWorkerStmt = db.prepare(`INSERT INTO workers (id,name,enabled,status,pid,failure_count,last_heartbeat_at,created_at,updated_at)
     VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, enabled=excluded.enabled, status=excluded.status, pid=excluded.pid,
     failure_count=excluded.failure_count, last_heartbeat_at=excluded.last_heartbeat_at, updated_at=excluded.updated_at`)
+  const getAccountStmt = db.prepare('SELECT * FROM remote_accounts WHERE id = ?')
+  const listAccountsStmt = db.prepare('SELECT * FROM remote_accounts ORDER BY id')
+  const upsertAccountStmt = db.prepare(`INSERT INTO remote_accounts (id,name,enabled,status,pid,profile_dir,last_started_at,last_used_at,created_at,updated_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET name=excluded.name, enabled=excluded.enabled, status=excluded.status, pid=excluded.pid,
+    profile_dir=excluded.profile_dir, last_started_at=excluded.last_started_at, last_used_at=excluded.last_used_at, updated_at=excluded.updated_at`)
 
   const api: ManagerDatabase = {
     workers: {
@@ -77,6 +96,16 @@ export function createDatabase(path: string): ManagerDatabase {
         const current = api.workers.getWorker(id)
         if (!current) return
         api.workers.upsertWorker({ ...current, status: patch.status, pid: patch.pid === undefined ? current.pid : patch.pid, failureCount: patch.failureCount ?? current.failureCount, lastHeartbeatAt: patch.lastHeartbeatAt === undefined ? current.lastHeartbeatAt : patch.lastHeartbeatAt, updatedAt: new Date().toISOString() })
+      },
+    },
+    remoteAccounts: {
+      getAccount(id) {
+        const row = getAccountStmt.get(id) as Record<string, unknown> | undefined
+        return row ? mapRemoteAccount(row) : undefined
+      },
+      listAccounts() { return (listAccountsStmt.all() as Record<string, unknown>[]).map(mapRemoteAccount) },
+      upsertAccount(account) {
+        upsertAccountStmt.run(account.id, account.name, account.enabled ? 1 : 0, account.status, account.pid, account.profileDir, account.lastStartedAt, account.lastUsedAt, account.createdAt, account.updatedAt)
       },
     },
     sessions: {
@@ -111,7 +140,9 @@ export function createDatabase(path: string): ManagerDatabase {
       listEvents(limit = 100) { return (db.prepare('SELECT * FROM events ORDER BY id DESC LIMIT ?').all(limit) as Record<string, unknown>[]).map(mapEvent) },
     },
     reconcileRuntimeState() {
-      db.prepare(`UPDATE workers SET status = CASE WHEN status = 'DISABLED' THEN 'DISABLED' ELSE 'STOPPED' END, pid = NULL, updated_at = ?`).run(new Date().toISOString())
+      const updatedAt = new Date().toISOString()
+      db.prepare(`UPDATE workers SET status = CASE WHEN status = 'DISABLED' THEN 'DISABLED' ELSE 'STOPPED' END, pid = NULL, updated_at = ?`).run(updatedAt)
+      db.prepare(`UPDATE remote_accounts SET status = CASE WHEN status = 'DISABLED' THEN 'DISABLED' ELSE 'STOPPED' END, pid = NULL, updated_at = ?`).run(updatedAt)
     },
     close() { db.close() },
   }

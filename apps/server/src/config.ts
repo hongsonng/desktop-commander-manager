@@ -1,6 +1,7 @@
 export interface ManagerConfig {
   databasePath: string
   runtimeRoot: string
+  remoteAccountProfileRoot?: string
   mcpPort?: number
   managementPort?: number
   dashboardDir?: string
