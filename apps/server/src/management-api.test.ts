@@ -47,6 +47,30 @@ describe('management API', () => {
     } finally { await api.close(); db.close() }
   })
 
+  it('reports the direct-local ChatGPT connection mode without requiring hosted RDC accounts', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-connection-')); roots.push(root)
+    const db = createDatabase(join(root, 'db.sqlite'))
+    const api = await createManagementApi({
+      database: db,
+      port: 0,
+      connectionInfo: {
+        mode: 'direct-local',
+        mcpUrl: 'http://127.0.0.1:8787/mcp',
+        hostedRemoteAccountRequired: false,
+        workerStrategy: 'sticky-failover',
+      },
+      actions: { async restart() {}, async enable() {}, async disable() {} },
+    })
+    try {
+      expect(await (await fetch(`${api.url}/api/connection`)).json()).toEqual({
+        mode: 'direct-local',
+        mcpUrl: 'http://127.0.0.1:8787/mcp',
+        hostedRemoteAccountRequired: false,
+        workerStrategy: 'sticky-failover',
+      })
+    } finally { await api.close(); db.close() }
+  })
+
   it('serves the production dashboard from the same management origin', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-dashboard-static-')); roots.push(root)
     const dashboardDir = join(root, 'dist')

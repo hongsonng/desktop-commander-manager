@@ -7,7 +7,7 @@ import { App } from './App'
 import * as api from './api'
 
 vi.mock('./api', () => ({
-  getHealth: vi.fn(), getWorkers: vi.fn(), getSessions: vi.fn(), getEvents: vi.fn(), workerAction: vi.fn(),
+  getHealth: vi.fn(), getConnectionInfo: vi.fn(), getWorkers: vi.fn(), getSessions: vi.fn(), getEvents: vi.fn(), workerAction: vi.fn(),
   getRemoteAccounts: vi.fn(), addRemoteAccount: vi.fn(), remoteAccountAction: vi.fn(), rotateRemoteAccount: vi.fn(),
 }))
 
@@ -15,6 +15,12 @@ const now = '2026-09-29T00:00:00.000Z'
 
 beforeEach(() => {
   vi.mocked(api.getHealth).mockResolvedValue({ status: 'ok', startedAt: now, uptimeMs: 12345 })
+  vi.mocked(api.getConnectionInfo).mockResolvedValue({
+    mode: 'direct-local',
+    mcpUrl: 'http://127.0.0.1:8787/mcp',
+    hostedRemoteAccountRequired: false,
+    workerStrategy: 'sticky-failover',
+  })
   vi.mocked(api.getWorkers).mockResolvedValue([
     { id: 'worker-1', name: 'Worker 1', enabled: true, status: 'READY', pid: 101, failureCount: 0, lastHeartbeatAt: now, createdAt: now, updatedAt: now, activeSessionCount: 3 },
     { id: 'worker-2', name: 'Worker 2', enabled: false, status: 'DISABLED', pid: null, failureCount: 1, lastHeartbeatAt: null, createdAt: now, updatedAt: now, activeSessionCount: 0 },
@@ -34,6 +40,9 @@ describe('dashboard', () => {
   it('renders manager state and executes worker and remote account actions with refresh', async () => {
     const user = userEvent.setup(); render(<App />)
     expect(await screen.findByText('Desktop Commander Manager')).toBeTruthy()
+    expect(await screen.findByText('Direct local')).toBeTruthy()
+    expect(screen.getByText('Hosted RDC account is not required for this ChatGPT connection.')).toBeTruthy()
+    expect(screen.getByText('http://127.0.0.1:8787/mcp')).toBeTruthy()
     expect(await screen.findByText('Worker 1')).toBeTruthy()
     expect(screen.getByText('3 sessions')).toBeTruthy()
     expect(screen.getByText('chat-a')).toBeTruthy()

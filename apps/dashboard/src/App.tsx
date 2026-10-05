@@ -1,6 +1,7 @@
 import { type FormEvent, useCallback, useEffect, useState } from 'react'
 import {
   addRemoteAccount,
+  getConnectionInfo,
   getEvents,
   getHealth,
   getRemoteAccounts,
@@ -10,7 +11,7 @@ import {
   rotateRemoteAccount,
   workerAction,
 } from './api'
-import type { EventView, HealthResponse, RemoteAccountAction, RemoteAccountView, SessionView, WorkerAction, WorkerView } from './types'
+import type { ConnectionInfo, EventView, HealthResponse, RemoteAccountAction, RemoteAccountView, SessionView, WorkerAction, WorkerView } from './types'
 import './styles.css'
 
 function formatUptime(ms: number): string {
@@ -28,6 +29,7 @@ function formatDate(value: string | null): string {
 
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
+  const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
   const [workers, setWorkers] = useState<WorkerView[]>([])
   const [remoteAccounts, setRemoteAccounts] = useState<RemoteAccountView[]>([])
   const [sessions, setSessions] = useState<SessionView[]>([])
@@ -39,10 +41,11 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextHealth, nextWorkers, nextRemoteAccounts, nextSessions, nextEvents] = await Promise.all([
-        getHealth(), getWorkers(), getRemoteAccounts(), getSessions(), getEvents(),
+      const [nextHealth, nextConnectionInfo, nextWorkers, nextRemoteAccounts, nextSessions, nextEvents] = await Promise.all([
+        getHealth(), getConnectionInfo(), getWorkers(), getRemoteAccounts(), getSessions(), getEvents(),
       ])
       setHealth(nextHealth)
+      setConnectionInfo(nextConnectionInfo)
       setWorkers(nextWorkers)
       setRemoteAccounts(nextRemoteAccounts)
       setSessions(nextSessions)
@@ -105,16 +108,26 @@ export function App() {
 
     {error && <div role="alert" className="alert"><strong>Connection error</strong><span>{error}</span><button onClick={() => void refresh()}>Retry</button></div>}
 
+    <section className="panel connection-panel">
+      <div className="panel-heading">
+        <div><p className="eyebrow">CHATGPT CONNECTION</p><h2>Direct local</h2></div>
+        <span className="badge paired">{connectionInfo?.workerStrategy === 'sticky-failover' ? 'AUTO FAILOVER' : 'CONNECTING'}</span>
+      </div>
+      <p>Hosted RDC account is not required for this ChatGPT connection.</p>
+      <div className="connection-path"><span>ChatGPT / Secure MCP Tunnel</span><strong>→</strong><code>{connectionInfo?.mcpUrl ?? 'http://127.0.0.1:8787/mcp'}</code><strong>→</strong><span>Local workers</span></div>
+      <p className="hint">Configure the ChatGPT connector once. The manager keeps the MCP endpoint stable and routes sessions across local workers automatically.</p>
+    </section>
+
     <section className="stats" aria-label="Manager summary">
       <article><span>Workers</span><strong>{workers.length}</strong></article>
-      <article><span>Account profiles</span><strong>{remoteAccounts.length}</strong></article>
+      <article><span>Hosted profiles</span><strong>{remoteAccounts.length}</strong></article>
       <article><span>Active sessions</span><strong>{sessions.length}</strong></article>
       <article><span>Uptime</span><strong>{health ? formatUptime(health.uptimeMs) : 'â€”'}</strong></article>
     </section>
 
     <section className="panel">
       <div className="panel-heading">
-        <div><p className="eyebrow">REMOTE DEVICE PROFILES</p><h2>Remote accounts</h2></div>
+        <div><p className="eyebrow">OPTIONAL HOSTED RDC PROFILES</p><h2>Remote accounts</h2></div>
         <button className="primary" aria-label="Rotate next account" disabled={busyAction !== null || remoteAccounts.filter((item) => item.enabled).length === 0} onClick={() => void rotateAccount()}>Rotate next</button>
       </div>
       <form className="remote-form" onSubmit={(event) => void submitAccount(event)}>
@@ -122,7 +135,7 @@ export function App() {
         <label>Account name<input aria-label="Account name" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Main account" /></label>
         <button type="submit" disabled={busyAction !== null || !accountId.trim() || !accountName.trim()}>Add account</button>
       </form>
-      <p className="hint">Each account uses its own HOME profile. Desktop Commander owns the login credential; this manager only tracks profile state and process lifecycle.</p>
+      <p className="hint">These profiles are only for Desktop Commander's hosted Remote MCP flow. They are not used by the Direct local ChatGPT connection above, which goes straight through this manager to local workers.</p>
       <div className="worker-grid account-grid">
         {remoteAccounts.map((account) => <article className="worker-card" key={account.id}>
           <div className="worker-title">

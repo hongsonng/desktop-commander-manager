@@ -11,6 +11,9 @@
                     "test:integration":  "vitest run tests/integration",
                     "dev":  "tsx apps/server/src/cli.ts",
                     "build":  "tsc -p tsconfig.json \u0026\u0026 npm run build -w apps/dashboard",
+                    "autostart:install": "tsx apps/server/src/autostart-cli.ts install",
+                    "autostart:uninstall": "tsx apps/server/src/autostart-cli.ts uninstall",
+                    "autostart:status": "tsx apps/server/src/autostart-cli.ts status",
                     "smoke:windows":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1"
                 },
     "devDependencies":  {

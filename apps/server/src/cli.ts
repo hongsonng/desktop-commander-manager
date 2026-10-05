@@ -3,6 +3,15 @@ import { join, resolve } from 'node:path'
 import { startManager } from './main.js'
 import type { ManagerConfig } from './config.js'
 
+export {
+  WINDOWS_AUTOSTART_TASK_NAME,
+  WINDOWS_TUNNEL_TASK_NAME,
+  createWindowsAutostartDeleteSpec,
+  createWindowsAutostartRunSpec,
+  createWindowsAutostartTaskSpec,
+  createWindowsTunnelAutostartTaskSpec,
+} from './windows-autostart.js'
+
 export function createDefaultManagerConfig(root = process.cwd()): ManagerConfig {
   const repoRoot = resolve(root)
   return {
