@@ -25,7 +25,15 @@ The Remote account manager does **not** pool hosted Remote MCP quotas behind one
 
 ## Cách chạy nhanh
 
-Mở PowerShell và chạy:
+Cách đơn giản nhất trên Windows là double-click file:
+
+```text
+start-manager.bat
+```
+
+File BAT tự chuyển CMD sang UTF-8, kiểm tra Node/npm, tự cài dependencies nếu cần, build dashboard lần đầu và chạy manager với thông báo tiếng Việt có màu.
+
+Nếu muốn chạy thủ công bằng PowerShell:
 
 ```powershell
 cd D:\SonCFS\desktop-commander-manager
