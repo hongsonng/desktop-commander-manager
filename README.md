@@ -35,7 +35,7 @@ Double-click:
 install-autostart.bat
 ```
 
-Script sẽ tự `npm install`, build dashboard, đăng ký Windows Task Scheduler và khởi động manager ngay. Từ những lần đăng nhập Windows sau, manager chạy headless tự động. Nếu `tunnel-client` đã có trên máy, script cũng đăng ký Secure MCP Tunnel chạy cùng Windows.
+Script sẽ tự `npm install`, build dashboard, đăng ký autostart và khởi động manager ngay. Installer ưu tiên Windows Task Scheduler; nếu tài khoản Windows hiện tại không có quyền tạo task, nó tự fallback sang `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` nên không cần chạy Administrator. Từ những lần đăng nhập Windows sau, manager chạy headless tự động. Nếu `tunnel-client` đã có trên máy, Secure MCP Tunnel cũng được đăng ký theo cùng cơ chế.
 
 Để gỡ autostart:
 
@@ -80,11 +80,13 @@ Biến `ComSpec` được đặt rõ ràng vì một số terminal/automation en
 
 ### Autostart hoạt động như thế nào
 
-- Task `DesktopCommanderManager` chạy `scripts/run-manager-headless.ps1` khi user đăng nhập Windows.
+- Installer thử tạo Task Scheduler entry `DesktopCommanderManager` trước.
+- Nếu Windows trả `Access is denied`, installer tự ghi entry cùng tên vào `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`; cơ chế này chạy theo user hiện tại và không cần Administrator.
+- Cả hai cơ chế đều chạy `scripts/run-manager-headless.ps1` khi user đăng nhập Windows.
 - Runner kiểm tra health trước để không tạo instance trùng.
 - Nếu manager crash, runner tự thử khởi động lại tối đa 10 lần, mỗi lần cách 5 giây.
 - Log manager: `data/logs/manager-autostart.log`.
-- Nếu có `tunnel-client`, task `DesktopCommanderTunnel` chạy `scripts/run-tunnel-headless.ps1`.
+- Nếu có `tunnel-client`, `DesktopCommanderTunnel` chạy `scripts/run-tunnel-headless.ps1` bằng Task Scheduler hoặc HKCU Run tương tự.
 - Tunnel runner chờ manager healthy, kiểm tra profile `desktop-commander-manager`, rồi tự reconnect nếu tunnel process dừng.
 - Log tunnel: `data/logs/tunnel-autostart.log`.
 - Không có API key/secret nào được ghi vào repo; tunnel dùng credential/environment mà `tunnel-client` đã được cấu hình bên ngoài repo.

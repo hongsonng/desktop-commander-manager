@@ -48,4 +48,26 @@ describe('CLI defaults', () => {
     expect(api.createWindowsAutostartRunSpec!('DesktopCommanderManager')).toEqual({ command, args: ['/Run', '/TN', 'DesktopCommanderManager'] })
     expect(api.createWindowsAutostartDeleteSpec!('DesktopCommanderManager')).toEqual({ command, args: ['/Delete', '/TN', 'DesktopCommanderManager', '/F'] })
   })
+
+  it('builds a per-user HKCU Run fallback when Task Scheduler is not permitted', () => {
+    const root = resolve('D:/example/dc-manager')
+    const api = cli as unknown as {
+      createWindowsRunKeySetSpec?: (valueName: string, runner: string) => { command: string; args: string[] }
+      createWindowsRunKeyQuerySpec?: (valueName: string) => { command: string; args: string[] }
+      createWindowsRunKeyDeleteSpec?: (valueName: string) => { command: string; args: string[] }
+    }
+    expect(api.createWindowsRunKeySetSpec).toBeTypeOf('function')
+    expect(api.createWindowsRunKeyQuerySpec).toBeTypeOf('function')
+    expect(api.createWindowsRunKeyDeleteSpec).toBeTypeOf('function')
+
+    const runner = join(root, 'scripts', 'run-manager-headless.ps1')
+    const reg = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe')
+    const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+    expect(api.createWindowsRunKeySetSpec!('DesktopCommanderManager', runner)).toEqual({
+      command: reg,
+      args: ['ADD', key, '/V', 'DesktopCommanderManager', '/T', 'REG_SZ', '/D', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${runner}"`, '/F'],
+    })
+    expect(api.createWindowsRunKeyQuerySpec!('DesktopCommanderManager')).toEqual({ command: reg, args: ['QUERY', key, '/V', 'DesktopCommanderManager'] })
+    expect(api.createWindowsRunKeyDeleteSpec!('DesktopCommanderManager')).toEqual({ command: reg, args: ['DELETE', key, '/V', 'DesktopCommanderManager', '/F'] })
+  })
 })

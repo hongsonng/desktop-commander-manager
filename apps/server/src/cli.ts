@@ -10,6 +10,9 @@ export {
   createWindowsAutostartRunSpec,
   createWindowsAutostartTaskSpec,
   createWindowsTunnelAutostartTaskSpec,
+  createWindowsRunKeyDeleteSpec,
+  createWindowsRunKeyQuerySpec,
+  createWindowsRunKeySetSpec,
 } from './windows-autostart.js'
 
 export function createDefaultManagerConfig(root = process.cwd()): ManagerConfig {

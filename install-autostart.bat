@@ -39,7 +39,7 @@ if errorlevel 1 goto :failed
 echo !GREEN![OK]!RESET! Build thành công.
 
 echo.
-echo !BLUE![4/4]!RESET! Đăng ký Windows Task Scheduler...
+echo !BLUE![4/4]!RESET! Đăng ký Windows autostart...
 call npm run autostart:install
 if errorlevel 1 goto :failed
 
