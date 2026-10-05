@@ -1,6 +1,6 @@
 # Desktop Commander Manager
 
-Windows-first MCP router for running multiple isolated **local** Desktop Commander workers behind one MCP endpoint.
+Windows-first MCP router and Remote Desktop Commander profile manager.
 
 ## What it does
 
@@ -12,28 +12,43 @@ Windows-first MCP router for running multiple isolated **local** Desktop Command
 - Rebinds a conversation only when recovery fails and another healthy worker exists.
 - Never blindly replays a tool call when upstream acknowledgement is ambiguous.
 - Serves a local operations dashboard and management API on `http://127.0.0.1:8788`.
+- Manages multiple isolated Desktop Commander **Remote Device account profiles** and can activate or rotate them one at a time.
 
-This MVP does **not** aggregate hosted Remote MCP quotas and does not store Desktop Commander hosted-account credentials.
+The Remote account manager does **not** pool hosted Remote MCP quotas behind one ChatGPT OAuth connection. Each Remote Device profile still belongs to the Desktop Commander account used during its own OAuth pairing flow.
 
 ## Requirements
 
 - Windows 10/11
 - Node.js 22+
 - npm
-- Network access for the first `npx -y @wonderwhy-er/desktop-commander@latest` worker startup
+- Network access for the first `npx -y @wonderwhy-er/desktop-commander@latest` startup and Remote Device pairing
 
-## Install and run
+## Cách chạy nhanh
+
+Mở PowerShell và chạy:
 
 ```powershell
 cd D:\SonCFS\desktop-commander-manager
+$env:ComSpec="$env:SystemRoot\System32\cmd.exe"
 npm install
 npm run build
 npm run dev
 ```
 
-The manager prints the MCP and dashboard URLs when startup completes. The dashboard is available at `http://127.0.0.1:8788/` after `npm run build`.
+Sau khi start:
 
-> When running npm through an environment that omits Windows `ComSpec`, set `$env:ComSpec="$env:SystemRoot\System32\cmd.exe"` for that terminal session before `npm install`.
+- Dashboard: `http://127.0.0.1:8788/`
+- MCP endpoint: `http://127.0.0.1:8787/mcp`
+
+Những lần chạy sau, nếu dependencies không thay đổi, chỉ cần:
+
+```powershell
+cd D:\SonCFS\desktop-commander-manager
+$env:ComSpec="$env:SystemRoot\System32\cmd.exe"
+npm run dev
+```
+
+Biến `ComSpec` được đặt rõ ràng vì một số terminal/automation environment trên Windows có thể không truyền biến này cho npm lifecycle scripts.
 
 ## Runtime layout
 
@@ -49,9 +64,39 @@ data/
       home/
       temp/
       logs/
+  remote-accounts/
+    account-a/
+      home/
+        .desktop-commander-device/
+          device.json
+      temp/
+      logs/
+    account-b/
+      home/
+      temp/
+      logs/
 ```
 
-Runtime DBs, worker homes, logs, build output, worktrees, and Superpowers scratch state are ignored by Git.
+`device.json` is created and maintained by Desktop Commander itself during Remote Device OAuth pairing. The manager only checks whether that profile-local file exists; it does not read, copy, expose, or persist the credential in SQLite.
+
+Runtime DBs, worker homes, Remote account profiles, logs, build output, worktrees, and Superpowers scratch state are ignored by Git.
+
+## Remote account rotation
+
+1. Start the manager and open `http://127.0.0.1:8788/`.
+2. Under **Remote accounts**, add an account id and display name.
+3. Click **Activate**. The manager launches `desktop-commander remote` with a HOME dedicated to that account.
+4. If the profile is not paired yet, complete Desktop Commander's normal browser/device OAuth flow with the intended account.
+5. The dashboard refreshes the `Paired` state from the profile-local RDC credential file.
+6. Add additional accounts the same way.
+7. Use **Rotate next** to stop the currently active Remote Device process and start the next enabled profile in round-robin order.
+8. Disable a profile to remove it from rotation without deleting its RDC credential/profile data.
+
+Only one managed Remote Device account process is active at a time. Unexpected process exits are recorded as `ERROR` and appear in the event log.
+
+### Important OAuth limitation
+
+Switching the Remote Device process on this Windows machine does not silently switch the ChatGPT-side Desktop Commander connector to another hosted account. The ChatGPT connector and the Remote Device pairing both have their own account authorization. This feature is therefore a profile/process switcher and rotation manager, not a transparent multi-account quota combiner.
 
 ## Routing behavior
 
@@ -75,6 +120,13 @@ Management API:
 - `POST /api/workers/:id/restart`
 - `POST /api/workers/:id/enable`
 - `POST /api/workers/:id/disable`
+- `GET /api/remote-accounts`
+- `POST /api/remote-accounts` with `{ "id": "account-a", "name": "Account A" }`
+- `POST /api/remote-accounts/:id/activate`
+- `POST /api/remote-accounts/:id/stop`
+- `POST /api/remote-accounts/:id/enable`
+- `POST /api/remote-accounts/:id/disable`
+- `POST /api/remote-accounts/rotate`
 
 The management server is hard-bound to `127.0.0.1` in the MVP.
 
@@ -89,6 +141,8 @@ npm run smoke:windows
 
 The Windows smoke test starts two **real local Desktop Commander** workers, waits for manager health, discovers tools through the router, calls only the read-only `get_config` tool, verifies the sticky session binding, then shuts everything down in `finally`.
 
+Remote account unit/integration tests use fake process factories so automated verification never launches a browser or logs into a real account.
+
 ## Connect ChatGPT privately
 
 Use OpenAI Secure MCP Tunnel rather than exposing port 8787 to the public internet. See [`docs/secure-mcp-tunnel.md`](docs/secure-mcp-tunnel.md).
@@ -98,6 +152,7 @@ For local protocol debugging, point MCP Inspector at `http://127.0.0.1:8787/mcp`
 ## Current MVP limits
 
 - One Windows machine.
-- Local Desktop Commander workers only; no hosted-account quota pooling.
+- Remote Device profile switching only; no transparent hosted-account quota pooling.
+- No automatic quota detection because the Remote Device CLI does not expose a stable quota API here.
 - No Tauri/system-tray packaging yet.
-- No OS security sandbox between workers; isolation is process/runtime-state separation.
+- No OS security sandbox between workers/profiles; isolation is process/runtime-state separation.

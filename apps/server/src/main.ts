@@ -4,7 +4,15 @@ import { createDatabase, type ManagerDatabase } from '@dc-manager/database'
 import { WorkerClient, type ProxyWorkerClient } from '@dc-manager/mcp-proxy'
 import { RetryPolicy, SessionRouter, UpstreamCallError } from '@dc-manager/router'
 import type { WorkerRecord } from '@dc-manager/shared'
-import { WorkerManager, createDesktopCommanderProcessFactory, type DesktopCommanderProcessFactory, type WorkerProcessHandle } from '@dc-manager/worker-manager'
+import {
+  RemoteAccountManager,
+  WorkerManager,
+  createDesktopCommanderProcessFactory,
+  createRemoteAccountProcessFactory,
+  type DesktopCommanderProcessFactory,
+  type RemoteAccountProcessFactory,
+  type WorkerProcessHandle,
+} from '@dc-manager/worker-manager'
 import { createMcpHttpServer } from './mcp-server.js'
 import { createManagementApi } from './management-api.js'
 import { DEFAULT_MANAGEMENT_PORT, DEFAULT_MCP_PORT, type ManagerConfig } from './config.js'
@@ -15,6 +23,7 @@ interface WorkerClientFactory {
 
 type Overrides = {
   processFactory?: DesktopCommanderProcessFactory
+  remoteAccountProcessFactory?: RemoteAccountProcessFactory
   workerClientFactory?: WorkerClientFactory
 }
 
@@ -32,6 +41,9 @@ function defaultWorker(id: string, now: string): WorkerRecord {
 export async function startManager(config: ManagerConfig, overrides: Overrides = {}): Promise<ManagerRuntime> {
   mkdirSync(dirname(config.databasePath), { recursive: true })
   mkdirSync(config.runtimeRoot, { recursive: true })
+  const remoteAccountProfileRoot = config.remoteAccountProfileRoot ?? resolve(dirname(config.runtimeRoot), 'remote-accounts')
+  mkdirSync(remoteAccountProfileRoot, { recursive: true })
+
   const database = createDatabase(config.databasePath)
   database.reconcileRuntimeState()
   if (database.workers.listWorkers().length === 0) {
@@ -41,8 +53,10 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
   }
 
   const processFactory = overrides.processFactory ?? createDesktopCommanderProcessFactory()
+  const remoteAccountProcessFactory = overrides.remoteAccountProcessFactory ?? createRemoteAccountProcessFactory()
   const workerClientFactory: WorkerClientFactory = overrides.workerClientFactory ?? { connect: (handle) => WorkerClient.connect(handle) }
   const workerManager = new WorkerManager({ database, processFactory, runtimeRoot: config.runtimeRoot })
+  const remoteAccountManager = new RemoteAccountManager({ database, processFactory: remoteAccountProcessFactory, profileRoot: remoteAccountProfileRoot })
   const clients = new Map<string, ProxyWorkerClient>()
 
   const connectWorker = async (workerId: string, handle: WorkerProcessHandle): Promise<void> => {
@@ -94,9 +108,19 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       await workerManager.disableWorker(id)
     },
   }
+  const remoteAccounts = {
+    list: () => remoteAccountManager.listAccounts(),
+    add: (name: string, id: string) => remoteAccountManager.addAccount(name, id),
+    activate: (id: string) => remoteAccountManager.activateAccount(id),
+    stop: (id: string) => remoteAccountManager.stopAccount(id),
+    enable: (id: string) => remoteAccountManager.enableAccount(id),
+    disable: (id: string) => remoteAccountManager.disableAccount(id),
+    rotate: () => remoteAccountManager.rotateAccount(),
+  }
+
   const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
   const dashboardDir = config.dashboardDir ?? (existsSync(defaultDashboardDir) ? defaultDashboardDir : undefined)
-  const managementRuntime = await createManagementApi({ database, actions, port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT, dashboardDir })
+  const managementRuntime = await createManagementApi({ database, actions, remoteAccounts, port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT, dashboardDir })
   let closed = false
 
   return {
@@ -106,6 +130,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       closed = true
       await managementRuntime.close().catch(() => undefined)
       await mcpRuntime.close().catch(() => undefined)
+      await remoteAccountManager.close().catch(() => undefined)
       for (const client of clients.values()) await client.close().catch(() => undefined)
       clients.clear()
       for (const worker of database.workers.listWorkers()) await workerManager.stopWorker(worker.id).catch(() => undefined)
