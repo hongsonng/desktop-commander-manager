@@ -18,8 +18,18 @@ function Test-ManagerHealthy {
 }
 
 $tunnelCommand = Get-Command tunnel-client -ErrorAction SilentlyContinue
-if (-not $tunnelCommand) {
-    Write-TunnelLog 'tunnel-client was not found in PATH; tunnel autostart cannot run.'
+$tunnelExecutable = if ($tunnelCommand) { $tunnelCommand.Source } else { $null }
+
+if (-not $tunnelExecutable) {
+    $candidate = Join-Path $env:LOCALAPPDATA 'Programs\OpenAI\tunnel-client\tunnel-client.exe'
+    if (Test-Path $candidate) {
+        $tunnelExecutable = $candidate
+        Write-TunnelLog "tunnel-client resolved from user install path: $candidate"
+    }
+}
+
+if (-not $tunnelExecutable) {
+    Write-TunnelLog 'tunnel-client was not found in PATH or the default user install path; tunnel autostart cannot run.'
     exit 2
 }
 
@@ -29,7 +39,7 @@ while (-not (Test-ManagerHealthy)) {
 }
 
 while ($true) {
-    & tunnel-client doctor --profile desktop-commander-manager --explain *>> $LogPath
+    & $tunnelExecutable doctor --profile desktop-commander-manager --explain *>> $LogPath
     if ($LASTEXITCODE -ne 0) {
         Write-TunnelLog 'Tunnel profile is not ready yet. Retrying in 60 seconds.'
         Start-Sleep -Seconds 60
@@ -37,7 +47,7 @@ while ($true) {
     }
 
     Write-TunnelLog 'Starting OpenAI Secure MCP Tunnel profile desktop-commander-manager.'
-    & tunnel-client run --profile desktop-commander-manager *>> $LogPath
+    & $tunnelExecutable run --profile desktop-commander-manager *>> $LogPath
     $exitCode = $LASTEXITCODE
     Write-TunnelLog "Tunnel process exited with code $exitCode; retrying in 5 seconds."
     Start-Sleep -Seconds 5
