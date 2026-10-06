@@ -90,12 +90,20 @@ async function listToolsThroughRouter(deps: McpHttpServerDeps, connectionId: str
 
 const TOOL_ARG_SUMMARY_KEYS = ['path', 'file_path', 'paths', 'command', 'mode', 'range', 'processId', 'pid', 'id', 'key', 'name'] as const
 
+function redactSummaryText(value: string): string {
+  return value
+    .replace(/\b(password|passwd|pwd|token|api[_-]?key|secret)\s*[:=]\s*([^\s;]+)/gi, '$1=***')
+    .replace(/(--(?:password|passwd|token|api-key|secret))\s+\S+/gi, '$1 ***')
+    .replace(/\bBearer\s+\S+/gi, 'Bearer ***')
+}
+
 function summarizeToolArgs(args: Record<string, unknown>): string {
   const parts: string[] = []
   for (const key of TOOL_ARG_SUMMARY_KEYS) {
     const value = args[key]
     if (value === undefined || value === null) continue
-    const text = Array.isArray(value) ? value.map(String).join(', ') : typeof value === 'object' ? '[object]' : String(value)
+    const rawText = Array.isArray(value) ? value.map(String).join(', ') : typeof value === 'object' ? '[object]' : String(value)
+    const text = redactSummaryText(rawText)
     parts.push(`${key}=${text.length > 180 ? `${text.slice(0, 177)}...` : text}`)
     if (parts.length >= 3) break
   }
