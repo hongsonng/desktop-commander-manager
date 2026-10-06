@@ -93,6 +93,23 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       if (!client) throw new UpstreamCallError('PRE_DISPATCH', `Worker client is not connected: ${workerId}`)
       return client
     },
+    onToolCall(audit) {
+      database.events.appendEvent({
+        sessionId: audit.sessionId,
+        workerId: audit.workerId,
+        type: 'TOOL_CALL',
+        message: `${audit.toolName} ${audit.status}`,
+        metadataJson: JSON.stringify({
+          toolName: audit.toolName,
+          argsSummary: audit.argsSummary,
+          status: audit.status,
+          durationMs: audit.durationMs,
+          failedOver: audit.failedOver,
+          ...(audit.error ? { error: audit.error } : {}),
+        }),
+        createdAt: new Date().toISOString(),
+      })
+    },
   })
 
   const actions = {

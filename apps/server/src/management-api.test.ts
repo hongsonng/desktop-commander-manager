@@ -15,7 +15,7 @@ afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: 
 describe('management API', () => {
   it('serves manager state, worker actions, and remote account rotation actions on loopback', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-api-')); roots.push(root); const db = createDatabase(join(root, 'db.sqlite'))
-    db.workers.upsertWorker(worker('worker-1')); db.sessions.upsertSession({ sessionId: 'chat-a', workerId: 'worker-1', createdAt: now, lastUsedAt: now }); db.events.appendEvent({ sessionId: null, workerId: 'worker-1', type: 'READY', message: 'ready', metadataJson: null, createdAt: now })
+    db.workers.upsertWorker(worker('worker-1')); db.sessions.upsertSession({ sessionId: 'chat-a', workerId: 'worker-1', createdAt: now, lastUsedAt: now }); db.events.appendEvent({ sessionId: null, workerId: 'worker-1', type: 'READY', message: 'ready', metadataJson: null, createdAt: now }); db.events.appendEvent({ sessionId: 'chat-a', workerId: 'worker-1', type: 'TOOL_CALL', message: 'read_file OK', metadataJson: JSON.stringify({ toolName: 'read_file', status: 'OK', durationMs: 12, argsSummary: 'path=D:/repo/file.txt', failedOver: false }), createdAt: now })
     const calls: string[] = []
     const remoteCalls: string[] = []
     const remoteAccounts = {
@@ -36,6 +36,9 @@ describe('management API', () => {
       expect(workers).toEqual([expect.objectContaining({ id: 'worker-1', activeSessionCount: 1 })])
       expect(await (await fetch(`${api.url}/api/sessions`)).json()).toHaveLength(1)
       expect(await (await fetch(`${api.url}/api/events`)).json()).toHaveLength(1)
+      expect(await (await fetch(`${api.url}/api/tool-calls`)).json()).toEqual([
+        expect.objectContaining({ sessionId: 'chat-a', workerId: 'worker-1', toolName: 'read_file', status: 'OK', durationMs: 12, argsSummary: 'path=D:/repo/file.txt', failedOver: false }),
+      ])
       for (const action of ['restart', 'enable', 'disable']) expect((await fetch(`${api.url}/api/workers/worker-1/${action}`, { method: 'POST' })).status).toBe(200)
       expect(calls).toEqual(['restart:worker-1', 'enable:worker-1', 'disable:worker-1'])
 

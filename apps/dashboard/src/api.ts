@@ -1,4 +1,4 @@
-import type { ConnectionInfo, EventView, HealthResponse, RemoteAccountAction, RemoteAccountView, SessionView, WorkerAction, WorkerView } from './types'
+import type { ConnectionInfo, EventView, HealthResponse, RemoteAccountAction, RemoteAccountView, SessionView, ToolCallView, WorkerAction, WorkerView } from './types'
 
 async function requestJson<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init)
@@ -15,6 +15,7 @@ export function getWorkers(): Promise<WorkerView[]> { return requestJson('/api/w
 export function getRemoteAccounts(): Promise<RemoteAccountView[]> { return requestJson('/api/remote-accounts') }
 export function getSessions(): Promise<SessionView[]> { return requestJson('/api/sessions') }
 export function getEvents(): Promise<EventView[]> { return requestJson('/api/events') }
+export function getToolCalls(): Promise<ToolCallView[]> { return requestJson('/api/tool-calls') }
 
 export async function workerAction(workerId: string, action: WorkerAction): Promise<void> {
   await requestJson(`/api/workers/${encodeURIComponent(workerId)}/${action}`, { method: 'POST' })

@@ -58,5 +58,18 @@ export interface EventView {
   createdAt: string
 }
 
+export interface ToolCallView {
+  id: number
+  sessionId: string | null
+  workerId: string | null
+  toolName: string
+  argsSummary: string
+  status: 'OK' | 'ERROR'
+  durationMs: number
+  failedOver: boolean
+  error: string | null
+  createdAt: string
+}
+
 export type WorkerAction = 'restart' | 'enable' | 'disable'
 export type RemoteAccountAction = 'activate' | 'stop' | 'enable' | 'disable'

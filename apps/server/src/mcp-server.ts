@@ -12,12 +12,24 @@ interface SessionRouterLike {
   failover(sessionId: string, failedWorkerId: string): Promise<WorkerDescriptor>
 }
 
+export type ToolCallAudit = {
+  sessionId: string
+  workerId: string
+  toolName: string
+  argsSummary: string
+  status: 'OK' | 'ERROR'
+  durationMs: number
+  failedOver: boolean
+  error?: string
+}
+
 type McpHttpServerDeps = {
   host?: string
   port?: number
   sessionRouter: SessionRouterLike
   retryPolicy: RetryPolicy
   getWorkerClient(workerId: string): ProxyWorkerClient
+  onToolCall?(audit: ToolCallAudit): void
 }
 
 type SessionRuntime = { transport: StreamableHTTPServerTransport; server: Server }
@@ -76,16 +88,47 @@ async function listToolsThroughRouter(deps: McpHttpServerDeps, connectionId: str
   return { ...raw, tools }
 }
 
+const TOOL_ARG_SUMMARY_KEYS = ['path', 'file_path', 'paths', 'command', 'mode', 'range', 'processId', 'pid', 'id', 'key', 'name'] as const
+
+function summarizeToolArgs(args: Record<string, unknown>): string {
+  const parts: string[] = []
+  for (const key of TOOL_ARG_SUMMARY_KEYS) {
+    const value = args[key]
+    if (value === undefined || value === null) continue
+    const text = Array.isArray(value) ? value.map(String).join(', ') : typeof value === 'object' ? '[object]' : String(value)
+    parts.push(`${key}=${text.length > 180 ? `${text.slice(0, 177)}...` : text}`)
+    if (parts.length >= 3) break
+  }
+  return parts.join(' | ')
+}
+
+function emitToolCallAudit(deps: McpHttpServerDeps, audit: ToolCallAudit): void {
+  try { deps.onToolCall?.(audit) } catch { /* Audit must never break the tool call. */ }
+}
+
 async function callToolThroughRouter(deps: McpHttpServerDeps, connectionId: string, name: string, args: Record<string, unknown>, meta: Record<string, unknown> | undefined) {
   const sessionId = sessionFromMeta(meta) ?? createFallbackSessionId(connectionId)
-  const worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
+  const startedAt = Date.now()
+  let worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
+  let failedOver = false
   try {
-    return await deps.getWorkerClient(worker.id).callTool(name, args, workerMeta(meta))
+    const result = await deps.getWorkerClient(worker.id).callTool(name, args, workerMeta(meta))
+    emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'OK', durationMs: Date.now() - startedAt, failedOver })
+    return result
   } catch (error) {
     if (error instanceof UpstreamCallError && deps.retryPolicy.canReplay(error)) {
-      const replacement = await deps.sessionRouter.failover(sessionId, worker.id)
-      return deps.getWorkerClient(replacement.id).callTool(name, args, workerMeta(meta))
+      worker = await deps.sessionRouter.failover(sessionId, worker.id)
+      failedOver = true
+      try {
+        const result = await deps.getWorkerClient(worker.id).callTool(name, args, workerMeta(meta))
+        emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'OK', durationMs: Date.now() - startedAt, failedOver })
+        return result
+      } catch (retryError) {
+        emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'ERROR', durationMs: Date.now() - startedAt, failedOver, error: retryError instanceof Error ? retryError.message : String(retryError) })
+        throw retryError
+      }
     }
+    emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'ERROR', durationMs: Date.now() - startedAt, failedOver, error: error instanceof Error ? error.message : String(error) })
     throw error
   }
 }
