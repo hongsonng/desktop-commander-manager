@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createDatabase } from './database'
-import type { RemoteAccountRecord, WorkerRecord } from '@dc-manager/shared'
+import type { WorkerRecord } from '@dc-manager/shared'
 
 const roots: string[] = []
 const now = '2026-09-29T00:00:00.000Z'
@@ -16,10 +16,6 @@ function tempDb() {
 
 function worker(overrides: Partial<WorkerRecord> = {}): WorkerRecord {
   return { id: 'worker-1', name: 'Worker 1', enabled: true, status: 'READY', pid: 1234, failureCount: 0, lastHeartbeatAt: now, createdAt: now, updatedAt: now, ...overrides }
-}
-
-function account(overrides: Partial<RemoteAccountRecord> = {}): RemoteAccountRecord {
-  return { id: 'account-a', name: 'Account A', enabled: true, status: 'RUNNING', pid: 4321, profileDir: 'D:/profiles/account-a', lastStartedAt: now, lastUsedAt: now, createdAt: now, updatedAt: now, ...overrides }
 }
 
 afterEach(() => {
@@ -40,22 +36,6 @@ describe('manager database', () => {
     expect(db.workers.getWorker('worker-1')).toMatchObject({ status: 'READY', pid: 1234 })
     expect(db.sessions.getSession('chat-a')).toMatchObject({ workerId: 'worker-1' })
     expect(db.events.listEvents()).toHaveLength(1)
-    db.close()
-  })
-
-  it('persists remote account profiles and reconciles stale runtime state', () => {
-    const path = tempDb()
-    let db = createDatabase(path)
-    db.remoteAccounts.upsertAccount(account())
-    db.remoteAccounts.upsertAccount(account({ id: 'account-disabled', enabled: false, status: 'DISABLED', pid: 99 }))
-    db.close()
-
-    db = createDatabase(path)
-    expect(db.remoteAccounts.getAccount('account-a')).toMatchObject({ status: 'RUNNING', pid: 4321, profileDir: 'D:/profiles/account-a' })
-    db.reconcileRuntimeState()
-    expect(db.remoteAccounts.getAccount('account-a')).toMatchObject({ status: 'STOPPED', pid: null, enabled: true })
-    expect(db.remoteAccounts.getAccount('account-disabled')).toMatchObject({ status: 'DISABLED', pid: null, enabled: false })
-    expect(db.remoteAccounts.listAccounts().map((item) => item.id)).toEqual(['account-a', 'account-disabled'])
     db.close()
   })
 

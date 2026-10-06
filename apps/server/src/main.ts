@@ -5,12 +5,9 @@ import { WorkerClient, type ProxyWorkerClient } from '@dc-manager/mcp-proxy'
 import { RetryPolicy, SessionRouter, UpstreamCallError } from '@dc-manager/router'
 import type { WorkerRecord } from '@dc-manager/shared'
 import {
-  RemoteAccountManager,
   WorkerManager,
   createDesktopCommanderProcessFactory,
-  createRemoteAccountProcessFactory,
   type DesktopCommanderProcessFactory,
-  type RemoteAccountProcessFactory,
   type WorkerProcessHandle,
 } from '@dc-manager/worker-manager'
 import { createMcpHttpServer } from './mcp-server.js'
@@ -24,7 +21,6 @@ interface WorkerClientFactory {
 
 type Overrides = {
   processFactory?: DesktopCommanderProcessFactory
-  remoteAccountProcessFactory?: RemoteAccountProcessFactory
   workerClientFactory?: WorkerClientFactory
 }
 
@@ -42,8 +38,6 @@ function defaultWorker(id: string, now: string): WorkerRecord {
 export async function startManager(config: ManagerConfig, overrides: Overrides = {}): Promise<ManagerRuntime> {
   mkdirSync(dirname(config.databasePath), { recursive: true })
   mkdirSync(config.runtimeRoot, { recursive: true })
-  const remoteAccountProfileRoot = config.remoteAccountProfileRoot ?? resolve(dirname(config.runtimeRoot), 'remote-accounts')
-  mkdirSync(remoteAccountProfileRoot, { recursive: true })
 
   const database = createDatabase(config.databasePath)
   database.reconcileRuntimeState()
@@ -54,10 +48,8 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
   }
 
   const processFactory = overrides.processFactory ?? createDesktopCommanderProcessFactory()
-  const remoteAccountProcessFactory = overrides.remoteAccountProcessFactory ?? createRemoteAccountProcessFactory()
   const workerClientFactory: WorkerClientFactory = overrides.workerClientFactory ?? { connect: (handle) => WorkerClient.connect(handle) }
   const workerManager = new WorkerManager({ database, processFactory, runtimeRoot: config.runtimeRoot })
-  const remoteAccountManager = new RemoteAccountManager({ database, processFactory: remoteAccountProcessFactory, profileRoot: remoteAccountProfileRoot })
   const clients = new Map<string, ProxyWorkerClient>()
 
   const connectWorker = async (workerId: string, handle: WorkerProcessHandle): Promise<void> => {
@@ -126,16 +118,6 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       await workerManager.disableWorker(id)
     },
   }
-  const remoteAccounts = {
-    list: () => remoteAccountManager.listAccounts(),
-    add: (name: string, id: string) => remoteAccountManager.addAccount(name, id),
-    activate: (id: string) => remoteAccountManager.activateAccount(id),
-    stop: (id: string) => remoteAccountManager.stopAccount(id),
-    enable: (id: string) => remoteAccountManager.enableAccount(id),
-    disable: (id: string) => remoteAccountManager.disableAccount(id),
-    rotate: () => remoteAccountManager.rotateAccount(),
-  }
-
   const resourceMonitor = createResourceMonitor(() => database.workers.listWorkers().map((worker) => ({ id: worker.id, name: worker.name, pid: worker.pid })))
 
   const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
@@ -143,11 +125,9 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
   const managementRuntime = await createManagementApi({
     database,
     actions,
-    remoteAccounts,
     connectionInfo: {
       mode: 'direct-local',
       mcpUrl: mcpRuntime.url,
-      hostedRemoteAccountRequired: false,
       workerStrategy: 'sticky-failover',
     },
     port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT,
@@ -163,7 +143,6 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       closed = true
       await managementRuntime.close().catch(() => undefined)
       await mcpRuntime.close().catch(() => undefined)
-      await remoteAccountManager.close().catch(() => undefined)
       for (const client of clients.values()) await client.close().catch(() => undefined)
       clients.clear()
       for (const worker of database.workers.listWorkers()) await workerManager.stopWorker(worker.id).catch(() => undefined)

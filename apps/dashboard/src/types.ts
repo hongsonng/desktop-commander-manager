@@ -8,7 +8,6 @@ export interface HealthResponse {
 export interface ConnectionInfo {
   mode: 'direct-local'
   mcpUrl: string
-  hostedRemoteAccountRequired: false
   workerStrategy: 'sticky-failover'
 }
 

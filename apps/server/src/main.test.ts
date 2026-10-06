@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, describe, expect, it } from 'vitest'
 import { createDatabase } from '@dc-manager/database'
-import type { DesktopCommanderProcessFactory, RemoteAccountProcessFactory, RemoteAccountProcessHandle, WorkerProcessHandle } from '@dc-manager/worker-manager'
+import type { DesktopCommanderProcessFactory, WorkerProcessHandle } from '@dc-manager/worker-manager'
 import type { ProxyWorkerClient } from '@dc-manager/mcp-proxy'
 import { startManager } from './main'
 
@@ -14,14 +14,6 @@ class FakeProcesses implements DesktopCommanderProcessFactory {
   async start(): Promise<WorkerProcessHandle> {
     const pid = this.nextPid++; let resolveExit!: () => void; const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => { resolveExit = () => resolve({ code: 0, signal: null }) })
     return { pid, stdin: new PassThrough(), stdout: new PassThrough(), stderr: new PassThrough(), exited, stop: async () => { this.stopped.push(pid); resolveExit() } }
-  }
-}
-class FakeRemoteProcesses implements RemoteAccountProcessFactory {
-  nextPid = 900; stopped: number[] = []; starts: Array<{ accountId: string; profileDir: string }> = []
-  async start(accountId: string, profileDir: string): Promise<RemoteAccountProcessHandle> {
-    const pid = this.nextPid++; let resolveExit!: () => void; const exited = new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve) => { resolveExit = () => resolve({ code: 0, signal: null }) })
-    this.starts.push({ accountId, profileDir })
-    return { pid, exited, stop: async () => { this.stopped.push(pid); resolveExit() } }
   }
 }
 class FakeWorkerClients {
@@ -63,21 +55,5 @@ describe('startManager', () => {
     expect(runtime.database.workers.getWorker('worker-2')?.status).toBe('DEGRADED')
     expect(processes.stopped).toContain(501)
     await runtime.close()
-  })
-
-  it('wires remote account profile lifecycle into the management API and shutdown', async () => {
-    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
-    const remoteProcesses = new FakeRemoteProcesses()
-    const runtime = await startManager({ databasePath: join(root, 'manager.db'), runtimeRoot: join(root, 'workers'), remoteAccountProfileRoot: join(root, 'remote-accounts'), mcpPort: 0, managementPort: 0 }, { processFactory: new FakeProcesses(), workerClientFactory: new FakeWorkerClients(), remoteAccountProcessFactory: remoteProcesses })
-    try {
-      const create = await fetch(`${runtime.managementUrl}/api/remote-accounts`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ id: 'account-a', name: 'Account A' }) })
-      expect(create.status).toBe(201)
-      const activate = await fetch(`${runtime.managementUrl}/api/remote-accounts/account-a/activate`, { method: 'POST' })
-      expect(activate.status).toBe(200)
-      const accounts = await (await fetch(`${runtime.managementUrl}/api/remote-accounts`)).json() as Array<{ id: string; status: string; pid: number | null }>
-      expect(accounts).toEqual([expect.objectContaining({ id: 'account-a', status: 'RUNNING', pid: 900 })])
-      expect(remoteProcesses.starts).toEqual([{ accountId: 'account-a', profileDir: join(root, 'remote-accounts', 'account-a') }])
-    } finally { await runtime.close() }
-    expect(remoteProcesses.stopped).toEqual([900])
   })
 })

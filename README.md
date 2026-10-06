@@ -1,6 +1,6 @@
 # Desktop Commander Manager
 
-Windows-first MCP router and Remote Desktop Commander profile manager.
+Windows-first MCP router for local Desktop Commander workers.
 
 ## What it does
 
@@ -14,16 +14,13 @@ Windows-first MCP router and Remote Desktop Commander profile manager.
 - Serves a local operations dashboard and management API on `http://127.0.0.1:8788`.
 - Exposes a **direct-local ChatGPT path**: ChatGPT → OpenAI Secure MCP Tunnel → this manager → local Desktop Commander workers.
 - Keeps one stable MCP endpoint while worker routing, restart, and failover happen behind the manager.
-- Manages multiple isolated Desktop Commander **Remote Device account profiles** as an optional hosted-RDC feature.
-
-For the recommended direct-local ChatGPT path, a hosted Desktop Commander account is **not required**. Hosted Remote Device profiles are separate: the official hosted relay scopes both the AI connector and paired device to the same Desktop Commander account, so rotating a local hosted profile cannot silently change the OAuth identity already held by ChatGPT.
 
 ## Requirements
 
 - Windows 10/11
 - Node.js 22+
 - npm
-- Network access for the first `npx -y @wonderwhy-er/desktop-commander@latest` startup and Remote Device pairing
+- Network access for the first `npx -y @wonderwhy-er/desktop-commander@latest` startup
 
 ## Cách chạy nhanh
 
@@ -117,41 +114,9 @@ data/
       home/
       temp/
       logs/
-  remote-accounts/
-    account-a/
-      home/
-        .desktop-commander-device/
-          device.json
-      temp/
-      logs/
-    account-b/
-      home/
-      temp/
-      logs/
 ```
 
-`device.json` is created and maintained by Desktop Commander itself during Remote Device OAuth pairing. The manager only checks whether that profile-local file exists; it does not read, copy, expose, or persist the credential in SQLite.
-
-Runtime DBs, worker homes, Remote account profiles, logs, build output, worktrees, and Superpowers scratch state are ignored by Git.
-
-## Optional: hosted Remote Desktop Commander profiles
-
-This section is **not required** for the recommended direct-local ChatGPT connection. Use it only when you also want to run Desktop Commander's hosted Remote MCP device profiles.
-
-1. Start the manager and open `http://127.0.0.1:8788/`.
-2. Under **Remote accounts**, add an account id and display name.
-3. Click **Activate**. The manager launches `desktop-commander remote` with a HOME dedicated to that account.
-4. If the profile is not paired yet, complete Desktop Commander's normal browser/device OAuth flow with the intended account.
-5. The dashboard refreshes the `Paired` state from the profile-local RDC credential file.
-6. Add additional accounts the same way.
-7. Use **Rotate next** to stop the currently active Remote Device process and start the next enabled profile in round-robin order.
-8. Disable a profile to remove it from rotation without deleting its RDC credential/profile data.
-
-Only one managed Remote Device account process is active at a time. Unexpected process exits are recorded as `ERROR` and appear in the event log.
-
-### Important OAuth limitation
-
-Switching the Remote Device process on this Windows machine does not silently switch the ChatGPT-side Desktop Commander connector to another hosted account. The ChatGPT connector and the Remote Device pairing both have their own account authorization. This feature is therefore a profile/process switcher and rotation manager, not a transparent multi-account quota combiner.
+Runtime DBs, worker homes, logs, build output, worktrees, and Superpowers scratch state are ignored by Git.
 
 ## Routing behavior
 
@@ -176,13 +141,6 @@ Management API:
 - `POST /api/workers/:id/restart`
 - `POST /api/workers/:id/enable`
 - `POST /api/workers/:id/disable`
-- `GET /api/remote-accounts`
-- `POST /api/remote-accounts` with `{ "id": "account-a", "name": "Account A" }`
-- `POST /api/remote-accounts/:id/activate`
-- `POST /api/remote-accounts/:id/stop`
-- `POST /api/remote-accounts/:id/enable`
-- `POST /api/remote-accounts/:id/disable`
-- `POST /api/remote-accounts/rotate`
 
 The management server is hard-bound to `127.0.0.1` in the MVP.
 
@@ -196,8 +154,6 @@ npm run smoke:windows
 ```
 
 The Windows smoke test starts two **real local Desktop Commander** workers, waits for manager health, discovers tools through the router, calls only the read-only `get_config` tool, verifies the sticky session binding, then shuts everything down in `finally`.
-
-Remote account unit/integration tests use fake process factories so automated verification never launches a browser or logs into a real account.
 
 ## Connect ChatGPT privately
 
@@ -221,6 +177,5 @@ For local protocol debugging, point MCP Inspector at `http://127.0.0.1:8787/mcp`
 
 - One Windows machine.
 - The direct-local path still needs a one-time ChatGPT Secure MCP Tunnel/connector setup.
-- Hosted Remote Device account rotation is separate and cannot replace the OAuth identity already authorized by a hosted RDC connector.
 - No Tauri/system-tray packaging yet.
-- No OS security sandbox between workers/profiles; isolation is process/runtime-state separation.
+- No OS security sandbox between workers; isolation is process/runtime-state separation.

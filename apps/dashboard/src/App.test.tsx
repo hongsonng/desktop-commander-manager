@@ -17,7 +17,6 @@ beforeEach(() => {
   vi.mocked(api.getConnectionInfo).mockResolvedValue({
     mode: 'direct-local',
     mcpUrl: 'http://127.0.0.1:8787/mcp',
-    hostedRemoteAccountRequired: false,
     workerStrategy: 'sticky-failover',
   })
   vi.mocked(api.getWorkers).mockResolvedValue([
@@ -44,7 +43,6 @@ describe('dashboard', () => {
     const user = userEvent.setup(); render(<App />)
     expect(await screen.findByText('Desktop Commander Manager')).toBeTruthy()
     expect(await screen.findByText('Direct local')).toBeTruthy()
-    expect(screen.getByText('Hosted RDC account is not required for this ChatGPT connection.')).toBeTruthy()
     expect(screen.getByText('http://127.0.0.1:8787/mcp')).toBeTruthy()
     expect(await screen.findByText('Worker 1')).toBeTruthy()
     expect(screen.getByText('3 sessions')).toBeTruthy()
@@ -58,7 +56,6 @@ describe('dashboard', () => {
     expect(screen.getByText('read_file')).toBeTruthy()
     expect(screen.getByText('path=D:/repo/file.txt')).toBeTruthy()
     expect(screen.getByText('12 ms')).toBeTruthy()
-    expect(screen.queryByText('Remote accounts')).toBeNull()
 
     await user.click(screen.getByRole('button', { name: 'Restart Worker 1' }))
     await waitFor(() => expect(api.workerAction).toHaveBeenCalledWith('worker-1', 'restart'))

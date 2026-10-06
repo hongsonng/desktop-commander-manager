@@ -21,17 +21,10 @@ dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
 @media (max-width: 860px) { .worker-grid, .two-column { grid-template-columns: 1fr; }.stats { grid-template-columns: 1fr 1fr 1fr; }.shell { width: min(100% - 24px, 1400px); } }
 @media (max-width: 560px) { .stats { grid-template-columns: 1fr; }.page-header { align-items: flex-start; flex-direction: column; } }
 
-/* Remote account profiles */
 .stats { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .badge-group { display: flex; align-items: center; justify-content: flex-end; gap: 6px; flex-wrap: wrap; }
-.state-running, .paired { color: #13744a; background: #e8f7ef; }
-.state-pairing, .unpaired { color: #846010; background: #fff5d7; }
-.state-error { color: #9a3636; background: #fdecec; }
-.state-stopped, .state-disabled { color: #657286; background: #eef2f7; }
-.worker-card dl .wide { grid-column: 1 / -1; }
+.state-disabled { color: #657286; background: #eef2f7; }
 .worker-card dd { white-space: nowrap; }
-.primary { background: #243247; border-color: #243247; color: #fff; }
-.primary:hover:not(:disabled) { background: #172234; }
 .hint { color: #77869a; font-size: 11px; line-height: 1.5; margin-top: 10px; }
 .empty-state { grid-column: 1 / -1; border: 1px dashed #d8e0ea; border-radius: 12px; padding: 22px; text-align: center; color: #8390a1; font-size: 12px; }
 @media (max-width: 860px) { .stats { grid-template-columns: 1fr 1fr; } }

@@ -95,9 +95,8 @@ export function App() {
     <section className="panel connection-panel">
       <div className="panel-heading">
         <div><p className="eyebrow">CHATGPT CONNECTION</p><h2>Direct local</h2></div>
-        <span className="badge paired">{connectionInfo?.workerStrategy === 'sticky-failover' ? 'AUTO FAILOVER' : 'CONNECTING'}</span>
+        <span className="badge state-ready">{connectionInfo?.workerStrategy === 'sticky-failover' ? 'AUTO FAILOVER' : 'CONNECTING'}</span>
       </div>
-      <p>Hosted RDC account is not required for this ChatGPT connection.</p>
       <div className="connection-path"><span>ChatGPT / Secure MCP Tunnel</span><strong>→</strong><code>{connectionInfo?.mcpUrl ?? 'http://127.0.0.1:8787/mcp'}</code><strong>→</strong><span>Local workers</span></div>
       <p className="hint">Configure the ChatGPT connector once. The manager keeps the MCP endpoint stable and routes sessions across local workers automatically.</p>
     </section>
