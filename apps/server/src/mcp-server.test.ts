@@ -15,10 +15,10 @@ class FakeRouter {
   async failover(sessionId: string, workerId: string) { this.failoverCalls.push([sessionId, workerId]); return descriptor('worker-2') }
 }
 
-function fakeClient(options: { fail?: 'PRE_DISPATCH' | 'ACK_UNKNOWN'; text?: string } = {}) {
+function fakeClient(options: { fail?: 'PRE_DISPATCH' | 'ACK_UNKNOWN'; text?: string; withUiMeta?: boolean } = {}) {
   let calls = 0
   return {
-    async listTools() { return { tools: [{ name: 'echo', description: 'Echo', inputSchema: { type: 'object', properties: { text: { type: 'string' } } } }] } },
+    async listTools() { return { tools: [{ name: 'echo', description: 'Echo', inputSchema: { type: 'object', properties: { text: { type: 'string' } } }, annotations: { title: 'Echo tool', readOnlyHint: true }, ...(options.withUiMeta ? { _meta: { 'ui/resourceUri': 'ui://desktop-commander/echo', 'openai/outputTemplate': 'ui://desktop-commander/echo', 'openai/widgetAccessible': true, ui: { resourceUri: 'ui://desktop-commander/echo' } } } : {}) }] } },
     async callTool(_name: string, args: Record<string, unknown>) { calls++; if (options.fail) throw new UpstreamCallError(options.fail, 'boom'); return { content: [{ type: 'text', text: options.text ?? String(args.text) }] } },
     async close() {}, get calls() { return calls },
   }
@@ -33,7 +33,7 @@ async function connect(runtime: Awaited<ReturnType<typeof createMcpHttpServer>>)
 
 describe('MCP HTTP proxy', () => {
   it('supports stateless MCP 2026-07-28 discovery, tool listing, and tool calls', async () => {
-    const router = new FakeRouter(); const worker1 = fakeClient()
+    const router = new FakeRouter(); const worker1 = fakeClient({ withUiMeta: true })
     const runtime = await createMcpHttpServer({ host: '127.0.0.1', port: 0, sessionRouter: router, retryPolicy: new RetryPolicy(), getWorkerClient: () => worker1 })
     const rpc = async (method: string, id: string | number, params: Record<string, unknown>) => {
       const response = await fetch(runtime.url, {
@@ -61,6 +61,8 @@ describe('MCP HTTP proxy', () => {
       expect(listed.status).toBe(200)
       expect(listed.body.result).toMatchObject({ resultType: 'complete', cacheScope: 'private', ttlMs: 0 })
       expect(listed.body.result.tools.map((tool: { name: string }) => tool.name)).toEqual(['echo'])
+      expect(listed.body.result.tools[0]).toMatchObject({ title: 'Echo tool', annotations: { title: 'Echo tool', readOnlyHint: true } })
+      expect(listed.body.result.tools[0]._meta).toBeUndefined()
 
       const called = await rpc('tools/call', 2, { name: 'echo', arguments: { text: 'modern-hi' }, _meta: envelope })
       expect(called.status).toBe(200)

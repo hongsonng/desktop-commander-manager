@@ -45,9 +45,35 @@ function workerMeta(meta: Record<string, unknown> | undefined): Record<string, u
   return Object.keys(filtered).length ? filtered : undefined
 }
 
+const UNSUPPORTED_PROXY_TOOL_META_KEYS = new Set(['ui/resourceUri', 'openai/outputTemplate', 'openai/widgetAccessible', 'ui'])
+
+function sanitizeToolDescriptor(tool: Record<string, unknown>): Record<string, unknown> {
+  const annotations = tool.annotations && typeof tool.annotations === 'object' ? tool.annotations as Record<string, unknown> : undefined
+  const title = typeof tool.title === 'string' && tool.title.trim()
+    ? tool.title
+    : typeof annotations?.title === 'string' && annotations.title.trim()
+      ? annotations.title
+      : undefined
+
+  const rawMeta = tool._meta && typeof tool._meta === 'object' ? tool._meta as Record<string, unknown> : undefined
+  const sanitizedMeta = rawMeta
+    ? Object.fromEntries(Object.entries(rawMeta).filter(([key]) => !UNSUPPORTED_PROXY_TOOL_META_KEYS.has(key)))
+    : undefined
+
+  const { _meta: _ignoredMeta, ...rest } = tool
+  return {
+    ...rest,
+    ...(title ? { title } : {}),
+    ...(sanitizedMeta && Object.keys(sanitizedMeta).length ? { _meta: sanitizedMeta } : {}),
+  }
+}
+
 async function listToolsThroughRouter(deps: McpHttpServerDeps, connectionId: string, meta: Record<string, unknown> | undefined) {
   const worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
-  return deps.getWorkerClient(worker.id).listTools(workerMeta(meta))
+  const result = await deps.getWorkerClient(worker.id).listTools(workerMeta(meta))
+  const raw = result as unknown as Record<string, unknown>
+  const tools = Array.isArray(raw.tools) ? raw.tools.map((tool) => sanitizeToolDescriptor(tool as Record<string, unknown>)) : []
+  return { ...raw, tools }
 }
 
 async function callToolThroughRouter(deps: McpHttpServerDeps, connectionId: string, name: string, args: Record<string, unknown>, meta: Record<string, unknown> | undefined) {
