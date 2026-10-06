@@ -22,6 +22,14 @@ type McpHttpServerDeps = {
 
 type SessionRuntime = { transport: StreamableHTTPServerTransport; server: Server }
 
+const SERVER_INFO = { name: 'desktop-commander-manager', version: '0.1.0' } as const
+const MODERN_PROTOCOL_VERSION = '2026-07-28'
+const MODERN_ENVELOPE_META_KEYS = new Set([
+  'io.modelcontextprotocol/protocolVersion',
+  'io.modelcontextprotocol/clientInfo',
+  'io.modelcontextprotocol/clientCapabilities',
+])
+
 function metaOf(request: { params?: { _meta?: Record<string, unknown> } }): Record<string, unknown> | undefined {
   return request.params?._meta
 }
@@ -31,40 +39,46 @@ function sessionFromMeta(meta: Record<string, unknown> | undefined): string | un
   return typeof value === 'string' && value.trim() ? value.trim() : undefined
 }
 
+function workerMeta(meta: Record<string, unknown> | undefined): Record<string, unknown> | undefined {
+  if (!meta) return undefined
+  const filtered = Object.fromEntries(Object.entries(meta).filter(([key]) => !MODERN_ENVELOPE_META_KEYS.has(key)))
+  return Object.keys(filtered).length ? filtered : undefined
+}
+
+async function listToolsThroughRouter(deps: McpHttpServerDeps, connectionId: string, meta: Record<string, unknown> | undefined) {
+  const worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
+  return deps.getWorkerClient(worker.id).listTools(workerMeta(meta))
+}
+
+async function callToolThroughRouter(deps: McpHttpServerDeps, connectionId: string, name: string, args: Record<string, unknown>, meta: Record<string, unknown> | undefined) {
+  const sessionId = sessionFromMeta(meta) ?? createFallbackSessionId(connectionId)
+  const worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
+  try {
+    return await deps.getWorkerClient(worker.id).callTool(name, args, workerMeta(meta))
+  } catch (error) {
+    if (error instanceof UpstreamCallError && deps.retryPolicy.canReplay(error)) {
+      const replacement = await deps.sessionRouter.failover(sessionId, worker.id)
+      return deps.getWorkerClient(replacement.id).callTool(name, args, workerMeta(meta))
+    }
+    throw error
+  }
+}
+
 function createProxyServer(deps: McpHttpServerDeps, getConnectionId: () => string): Server {
   const server = new Server({ name: 'desktop-commander-manager', version: '0.1.0' }, { capabilities: { tools: {} } })
 
   server.setRequestHandler(ListToolsRequestSchema, async (request) => {
-    const meta = metaOf(request)
     try {
-      const worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId: getConnectionId() })
-      return await deps.getWorkerClient(worker.id).listTools(meta)
+      return await listToolsThroughRouter(deps, getConnectionId(), metaOf(request))
     } catch (error) {
       throw normalizeMcpError(error)
     }
   })
 
   server.setRequestHandler(CallToolRequestSchema, async (request) => {
-    const meta = metaOf(request)
-    const connectionId = getConnectionId()
-    const sessionId = sessionFromMeta(meta) ?? createFallbackSessionId(connectionId)
-    let worker: WorkerDescriptor
     try {
-      worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
+      return await callToolThroughRouter(deps, getConnectionId(), request.params.name, request.params.arguments ?? {}, metaOf(request))
     } catch (error) {
-      throw normalizeMcpError(error)
-    }
-    try {
-      return await deps.getWorkerClient(worker.id).callTool(request.params.name, request.params.arguments ?? {}, meta)
-    } catch (error) {
-      if (error instanceof UpstreamCallError && deps.retryPolicy.canReplay(error)) {
-        try {
-          const replacement = await deps.sessionRouter.failover(sessionId, worker.id)
-          return await deps.getWorkerClient(replacement.id).callTool(request.params.name, request.params.arguments ?? {}, meta)
-        } catch (retryError) {
-          throw normalizeMcpError(retryError)
-        }
-      }
       throw normalizeMcpError(error)
     }
   })
@@ -86,6 +100,93 @@ function isInitialize(body: unknown): boolean {
   return !!body && typeof body === 'object' && (body as { method?: unknown }).method === 'initialize'
 }
 
+type JsonRpcRequestBody = {
+  jsonrpc?: unknown
+  id?: string | number | null
+  method?: unknown
+  params?: { _meta?: Record<string, unknown>; name?: unknown; arguments?: unknown }
+}
+
+function requestBody(body: unknown): JsonRpcRequestBody | undefined {
+  return body && typeof body === 'object' ? body as JsonRpcRequestBody : undefined
+}
+
+function isModernRequest(body: unknown, headers: Record<string, unknown>): boolean {
+  const parsed = requestBody(body)
+  if (!parsed) return false
+  if (parsed.method === 'server/discover') return true
+  const metaVersion = parsed.params?._meta?.['io.modelcontextprotocol/protocolVersion']
+  const headerVersion = headers['mcp-protocol-version']
+  return metaVersion === MODERN_PROTOCOL_VERSION || headerVersion === MODERN_PROTOCOL_VERSION
+}
+
+function modernResultMeta(existing: unknown): Record<string, unknown> {
+  const base = existing && typeof existing === 'object' ? existing as Record<string, unknown> : {}
+  return { ...base, 'io.modelcontextprotocol/serverInfo': SERVER_INFO }
+}
+
+function modernError(id: string | number | null | undefined, error: unknown, status = 200) {
+  const normalized = normalizeMcpError(error)
+  const data = (normalized as McpError & { data?: unknown }).data
+  return {
+    status,
+    payload: { jsonrpc: '2.0', id: id ?? null, error: { code: normalized.code, message: normalized.message, ...(data === undefined ? {} : { data }) } },
+  }
+}
+
+async function handleModernRequest(body: unknown, deps: McpHttpServerDeps) {
+  const parsed = requestBody(body)
+  const id = parsed?.id
+  const method = parsed?.method
+  const meta = parsed?.params?._meta
+  const connectionId = `modern:${randomUUID()}`
+
+  if (method === 'server/discover') {
+    return {
+      status: 200,
+      payload: {
+        jsonrpc: '2.0', id,
+        result: {
+          resultType: 'complete', supportedVersions: [MODERN_PROTOCOL_VERSION], capabilities: { tools: {} },
+          ttlMs: 0, cacheScope: 'private', _meta: modernResultMeta(undefined),
+        },
+      },
+    }
+  }
+
+  if (method === 'tools/list') {
+    try {
+      const result = await listToolsThroughRouter(deps, connectionId, meta)
+      const raw = result as unknown as Record<string, unknown>
+      return {
+        status: 200,
+        payload: { jsonrpc: '2.0', id, result: { ...raw, resultType: 'complete', ttlMs: 0, cacheScope: 'private', _meta: modernResultMeta(raw._meta) } },
+      }
+    } catch (error) {
+      return modernError(id, error)
+    }
+  }
+
+  if (method === 'tools/call') {
+    const name = parsed?.params?.name
+    if (typeof name !== 'string' || !name) return modernError(id, new McpError(ErrorCode.InvalidParams, 'Tool name is required'))
+    const args = parsed?.params?.arguments
+    const safeArgs = args && typeof args === 'object' && !Array.isArray(args) ? args as Record<string, unknown> : {}
+    try {
+      const result = await callToolThroughRouter(deps, connectionId, name, safeArgs, meta)
+      const raw = result as unknown as Record<string, unknown>
+      return {
+        status: 200,
+        payload: { jsonrpc: '2.0', id, result: { ...raw, resultType: 'complete', _meta: modernResultMeta(raw._meta) } },
+      }
+    } catch (error) {
+      return modernError(id, error)
+    }
+  }
+
+  return modernError(id, new McpError(ErrorCode.MethodNotFound, `Method not found: ${String(method)}`), 404)
+}
+
 export async function createMcpHttpServer(deps: McpHttpServerDeps): Promise<{ url: string; close(): Promise<void> }> {
   const host = deps.host ?? '127.0.0.1'
   const port = deps.port ?? 8787
@@ -96,7 +197,14 @@ export async function createMcpHttpServer(deps: McpHttpServerDeps): Promise<{ ur
   app.route({
     method: ['GET', 'POST', 'DELETE'], url: '/mcp',
     handler: async (request, reply) => {
-      const incomingSessionId = headerSessionId(request.headers as Record<string, unknown>)
+      const headers = request.headers as Record<string, unknown>
+      if (request.method === 'POST' && isModernRequest(request.body, headers)) {
+        const response = await handleModernRequest(request.body, deps)
+        reply.code(response.status).send(response.payload)
+        return
+      }
+
+      const incomingSessionId = headerSessionId(headers)
       let runtime = incomingSessionId ? sessions.get(incomingSessionId) : undefined
 
       if (!runtime && !incomingSessionId && isInitialize(request.body)) {

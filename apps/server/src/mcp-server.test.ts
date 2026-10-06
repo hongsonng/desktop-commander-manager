@@ -32,6 +32,43 @@ async function connect(runtime: Awaited<ReturnType<typeof createMcpHttpServer>>)
 }
 
 describe('MCP HTTP proxy', () => {
+  it('supports stateless MCP 2026-07-28 discovery, tool listing, and tool calls', async () => {
+    const router = new FakeRouter(); const worker1 = fakeClient()
+    const runtime = await createMcpHttpServer({ host: '127.0.0.1', port: 0, sessionRouter: router, retryPolicy: new RetryPolicy(), getWorkerClient: () => worker1 })
+    const rpc = async (method: string, id: string | number, params: Record<string, unknown>) => {
+      const response = await fetch(runtime.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json, text/event-stream', 'mcp-protocol-version': '2026-07-28', 'mcp-method': method },
+        body: JSON.stringify({ jsonrpc: '2.0', id, method, params }),
+      })
+      return { status: response.status, body: await response.json() as Record<string, any> }
+    }
+    const envelope = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientInfo': { name: 'chatgpt', version: '1.0.0' },
+      'io.modelcontextprotocol/clientCapabilities': {},
+      'openai/session': 'chat-modern',
+    }
+    try {
+      const discover = await rpc('server/discover', 'openai-mcp-discover', { _meta: envelope })
+      expect(discover.status).toBe(200)
+      expect(discover.body.result).toMatchObject({
+        resultType: 'complete', supportedVersions: ['2026-07-28'], capabilities: { tools: {} }, cacheScope: 'private', ttlMs: 0,
+        _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'desktop-commander-manager', version: '0.1.0' } },
+      })
+
+      const listed = await rpc('tools/list', 1, { _meta: envelope })
+      expect(listed.status).toBe(200)
+      expect(listed.body.result).toMatchObject({ resultType: 'complete', cacheScope: 'private', ttlMs: 0 })
+      expect(listed.body.result.tools.map((tool: { name: string }) => tool.name)).toEqual(['echo'])
+
+      const called = await rpc('tools/call', 2, { name: 'echo', arguments: { text: 'modern-hi' }, _meta: envelope })
+      expect(called.status).toBe(200)
+      expect(called.body.result).toMatchObject({ resultType: 'complete', content: [{ type: 'text', text: 'modern-hi' }] })
+      expect(router.contexts.some((context) => context.sessionId === 'chat-modern')).toBe(true)
+    } finally { await runtime.close() }
+  })
+
   it('forwards tool discovery/calls and extracts openai session metadata', async () => {
     const router = new FakeRouter(); const worker1 = fakeClient()
     const runtime = await createMcpHttpServer({ host: '127.0.0.1', port: 0, sessionRouter: router, retryPolicy: new RetryPolicy(), getWorkerClient: () => worker1 })
