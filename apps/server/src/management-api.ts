@@ -4,6 +4,7 @@ import type { ManagerDatabase } from '@dc-manager/database'
 import type { RemoteAccountRecord } from '@dc-manager/shared'
 import fastifyStatic from '@fastify/static'
 import Fastify from 'fastify'
+import type { ResourceUsageSnapshot } from './resource-monitor.js'
 
 export interface ManagementActions {
   restart(id: string): Promise<void>
@@ -49,6 +50,7 @@ type Options = {
   connectionInfo?: ConnectionInfo
   port?: number
   dashboardDir?: string
+  resources?: { snapshot(): Promise<ResourceUsageSnapshot> }
 }
 
 export async function createManagementApi(options: Options): Promise<{ url: string; close(): Promise<void> }> {
@@ -63,6 +65,13 @@ export async function createManagementApi(options: Options): Promise<{ url: stri
     workerStrategy: 'sticky-failover',
   } satisfies ConnectionInfo))
   app.get('/api/workers', async () => options.database.workers.listWorkers().map((worker) => ({ ...worker, activeSessionCount: options.database.sessions.countByWorker(worker.id) })))
+  app.get('/api/resources', async () => options.resources?.snapshot() ?? ({
+    available: false,
+    sampledAt: new Date().toISOString(),
+    total: { memoryBytes: 0, cpuPercent: 0 },
+    system: { memoryUsedBytes: 0, totalMemoryBytes: 0, cpuPercent: 0 },
+    items: [],
+  } satisfies ResourceUsageSnapshot))
   app.get('/api/sessions', async () => options.database.sessions.listSessions())
   app.get('/api/events', async () => options.database.events.listEvents(200).filter((event) => event.type !== 'TOOL_CALL').slice(0, 100))
   app.get('/api/tool-calls', async () => options.database.events.listEvents(500)

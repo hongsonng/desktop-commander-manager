@@ -7,7 +7,7 @@ import { App } from './App'
 import * as api from './api'
 
 vi.mock('./api', () => ({
-  getHealth: vi.fn(), getConnectionInfo: vi.fn(), getWorkers: vi.fn(), getSessions: vi.fn(), getEvents: vi.fn(), getToolCalls: vi.fn(), workerAction: vi.fn(),
+  getHealth: vi.fn(), getConnectionInfo: vi.fn(), getWorkers: vi.fn(), getResources: vi.fn(), getSessions: vi.fn(), getEvents: vi.fn(), getToolCalls: vi.fn(), workerAction: vi.fn(),
 }))
 
 const now = '2026-09-29T00:00:00.000Z'
@@ -24,6 +24,15 @@ beforeEach(() => {
     { id: 'worker-1', name: 'Worker 1', enabled: true, status: 'READY', pid: 101, failureCount: 0, lastHeartbeatAt: now, createdAt: now, updatedAt: now, activeSessionCount: 3 },
     { id: 'worker-2', name: 'Worker 2', enabled: false, status: 'DISABLED', pid: null, failureCount: 1, lastHeartbeatAt: null, createdAt: now, updatedAt: now, activeSessionCount: 0 },
   ])
+  vi.mocked(api.getResources).mockResolvedValue({
+    available: true, sampledAt: now,
+    total: { memoryBytes: 180 * 1024 * 1024, cpuPercent: 2.4 },
+    system: { memoryUsedBytes: 8 * 1024 ** 3, totalMemoryBytes: 32 * 1024 ** 3, cpuPercent: 18.5 },
+    items: [
+      { id: 'manager', label: 'Manager', pid: 100, memoryBytes: 32 * 1024 * 1024, cpuPercent: 0.5, processCount: 1, status: 'running' },
+      { id: 'tunnel', label: 'Secure MCP Tunnel', pid: 200, memoryBytes: 28 * 1024 * 1024, cpuPercent: 0.2, processCount: 3, status: 'running' },
+    ],
+  })
   vi.mocked(api.getSessions).mockResolvedValue([{ sessionId: 'chat-a', workerId: 'worker-1', createdAt: now, lastUsedAt: now }])
   vi.mocked(api.getEvents).mockResolvedValue([{ id: 1, sessionId: 'chat-a', workerId: 'worker-1', type: 'SESSION_FAILOVER', message: 'worker-2 -> worker-1', metadataJson: null, createdAt: now }])
   vi.mocked(api.getToolCalls).mockResolvedValue([{ id: 2, sessionId: 'chat-a', workerId: 'worker-1', toolName: 'read_file', argsSummary: 'path=D:/repo/file.txt', status: 'OK', durationMs: 12, failedOver: false, createdAt: now }])
@@ -39,6 +48,10 @@ describe('dashboard', () => {
     expect(screen.getByText('http://127.0.0.1:8787/mcp')).toBeTruthy()
     expect(await screen.findByText('Worker 1')).toBeTruthy()
     expect(screen.getByText('3 sessions')).toBeTruthy()
+    expect(await screen.findByText('Resource Usage')).toBeTruthy()
+    expect(screen.getByText('180 MB')).toBeTruthy()
+    expect(screen.getByText('Secure MCP Tunnel')).toBeTruthy()
+    expect(screen.getByText('18.5%')).toBeTruthy()
     expect(screen.getAllByText('chat-a')).toHaveLength(2)
     expect(screen.getByText('SESSION_FAILOVER')).toBeTruthy()
     expect(await screen.findByText('Live Tool Calls')).toBeTruthy()

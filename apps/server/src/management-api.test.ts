@@ -28,12 +28,23 @@ describe('management API', () => {
       rotate: async () => { remoteCalls.push('rotate'); return account('account-b') },
     }
     db.remoteAccounts.upsertAccount(account())
-    const api = await createManagementApi({ database: db, port: 0, remoteAccounts, actions: { async restart(id) { calls.push(`restart:${id}`) }, async enable(id) { calls.push(`enable:${id}`) }, async disable(id) { calls.push(`disable:${id}`) } } })
+    const resources = {
+      async snapshot() {
+        return {
+          available: true, sampledAt: now,
+          total: { memoryBytes: 100, cpuPercent: 1.5 },
+          system: { memoryUsedBytes: 200, totalMemoryBytes: 1000, cpuPercent: 12.5 },
+          items: [{ id: 'manager', label: 'Manager', pid: 123, memoryBytes: 100, cpuPercent: 1.5, processCount: 1, status: 'running' as const }],
+        }
+      },
+    }
+    const api = await createManagementApi({ database: db, port: 0, remoteAccounts, resources, actions: { async restart(id) { calls.push(`restart:${id}`) }, async enable(id) { calls.push(`enable:${id}`) }, async disable(id) { calls.push(`disable:${id}`) } } })
     try {
       expect(api.url).toMatch(/^http:\/\/127\.0\.0\.1:/)
       expect((await (await fetch(`${api.url}/api/health`)).json() as { status: string }).status).toBe('ok')
       const workers = await (await fetch(`${api.url}/api/workers`)).json() as Array<{ id: string; activeSessionCount: number }>
       expect(workers).toEqual([expect.objectContaining({ id: 'worker-1', activeSessionCount: 1 })])
+      expect(await (await fetch(`${api.url}/api/resources`)).json()).toEqual(expect.objectContaining({ available: true, total: { memoryBytes: 100, cpuPercent: 1.5 } }))
       expect(await (await fetch(`${api.url}/api/sessions`)).json()).toHaveLength(1)
       expect(await (await fetch(`${api.url}/api/events`)).json()).toHaveLength(1)
       expect(await (await fetch(`${api.url}/api/tool-calls`)).json()).toEqual([

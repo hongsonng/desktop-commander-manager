@@ -3,12 +3,13 @@ import {
   getConnectionInfo,
   getEvents,
   getHealth,
+  getResources,
   getToolCalls,
   getSessions,
   getWorkers,
   workerAction,
 } from './api'
-import type { ConnectionInfo, EventView, HealthResponse, SessionView, ToolCallView, WorkerAction, WorkerView } from './types'
+import type { ConnectionInfo, EventView, HealthResponse, ResourceUsageView, SessionView, ToolCallView, WorkerAction, WorkerView } from './types'
 import './styles.css'
 
 function formatUptime(ms: number): string {
@@ -28,6 +29,11 @@ function formatTime(value: string): string {
   return new Date(value).toLocaleTimeString()
 }
 
+function formatBytes(value: number): string {
+  if (value >= 1024 ** 3) return `${(value / 1024 ** 3).toFixed(1)} GB`
+  return `${Math.round(value / 1024 ** 2)} MB`
+}
+
 function toolKind(name: string): 'READ' | 'WRITE' | 'COMMAND' | 'TOOL' {
   if (['start_process', 'interact_with_process', 'force_terminate', 'kill_process'].includes(name)) return 'COMMAND'
   if (/^(write_|edit_|create_|move_|set_|kill_)/.test(name)) return 'WRITE'
@@ -39,6 +45,7 @@ export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
   const [workers, setWorkers] = useState<WorkerView[]>([])
+  const [resources, setResources] = useState<ResourceUsageView | null>(null)
   const [sessions, setSessions] = useState<SessionView[]>([])
   const [events, setEvents] = useState<EventView[]>([])
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([])
@@ -47,12 +54,13 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextHealth, nextConnectionInfo, nextWorkers, nextSessions, nextEvents, nextToolCalls] = await Promise.all([
-        getHealth(), getConnectionInfo(), getWorkers(), getSessions(), getEvents(), getToolCalls(),
+      const [nextHealth, nextConnectionInfo, nextWorkers, nextResources, nextSessions, nextEvents, nextToolCalls] = await Promise.all([
+        getHealth(), getConnectionInfo(), getWorkers(), getResources(), getSessions(), getEvents(), getToolCalls(),
       ])
       setHealth(nextHealth)
       setConnectionInfo(nextConnectionInfo)
       setWorkers(nextWorkers)
+      setResources(nextResources)
       setSessions(nextSessions)
       setEvents(nextEvents)
       setToolCalls(nextToolCalls)
@@ -98,6 +106,29 @@ export function App() {
       <article><span>Workers</span><strong>{workers.length}</strong></article>
       <article><span>Active sessions</span><strong>{sessions.length}</strong></article>
       <article><span>Uptime</span><strong>{health ? formatUptime(health.uptimeMs) : 'â€”'}</strong></article>
+    </section>
+
+    <section className="panel resource-panel">
+      <div className="panel-heading">
+        <div><p className="eyebrow">SYSTEM RESOURCES</p><h2>Resource Usage</h2></div>
+        <span className={`badge ${resources?.available ? 'live-badge' : 'state-degraded'}`}>{resources?.available ? 'LIVE · 2s' : 'LIMITED'}</span>
+      </div>
+      <div className="resource-summary">
+        <article><span>Stack RAM</span><strong>{resources ? formatBytes(resources.total.memoryBytes) : '—'}</strong></article>
+        <article><span>Stack CPU</span><strong>{resources ? `${resources.total.cpuPercent.toFixed(1)}%` : '—'}</strong></article>
+        <article><span>System RAM</span><strong>{resources ? `${formatBytes(resources.system.memoryUsedBytes)} / ${formatBytes(resources.system.totalMemoryBytes)}` : '—'}</strong></article>
+        <article><span>System CPU</span><strong>{resources ? `${resources.system.cpuPercent.toFixed(1)}%` : '—'}</strong></article>
+      </div>
+      {resources?.error && <p className="resource-warning" title={resources.error}>Detailed process metrics are temporarily unavailable.</p>}
+      <div className="table-wrap resource-table-wrap">
+        <table><thead><tr><th>Component</th><th>PID</th><th>Processes</th><th>RAM</th><th>CPU</th><th>Status</th></tr></thead>
+          <tbody>{resources?.items.map((item) => <tr key={item.id}>
+            <td><strong>{item.label}</strong></td><td><code>{item.pid ?? '—'}</code></td><td>{item.processCount}</td>
+            <td>{formatBytes(item.memoryBytes)}</td><td>{item.cpuPercent.toFixed(1)}%</td>
+            <td><span className={`badge ${item.status === 'running' ? 'state-ready' : 'state-disabled'}`}>{item.status.toUpperCase()}</span></td>
+          </tr>)}</tbody>
+        </table>
+      </div>
     </section>
 
     <section className="panel activity-panel">

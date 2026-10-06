@@ -37,6 +37,17 @@ dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
 @media (max-width: 860px) { .stats { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 560px) { .stats { grid-template-columns: 1fr; } .panel-heading { align-items: flex-start; flex-direction: column; } .panel-heading > button { width: 100%; } }
 
+/* Resource monitor */
+.resource-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 14px; }
+.resource-summary article { border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 14px; background: #fafcfe; }
+.resource-summary span { display: block; color: #7b899b; font-size: 10px; text-transform: uppercase; letter-spacing: .05em; }
+.resource-summary strong { display: block; margin-top: 5px; font-size: 17px; }
+.resource-table-wrap { max-height: 260px; border: 1px solid #edf0f4; border-radius: 10px; }
+.resource-table-wrap thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+.resource-warning { margin-top: 10px; color: #9a3636; font-size: 11px; }
+@media (max-width: 860px) { .resource-summary { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .resource-summary { grid-template-columns: 1fr; } }
+
 /* Live tool call monitor */
 .activity-panel { overflow: hidden; }
 .sessions-table-wrap { max-height: 360px; overscroll-behavior: contain; scrollbar-gutter: stable; }

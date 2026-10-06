@@ -15,6 +15,7 @@ import {
 } from '@dc-manager/worker-manager'
 import { createMcpHttpServer } from './mcp-server.js'
 import { createManagementApi } from './management-api.js'
+import { createResourceMonitor } from './resource-monitor.js'
 import { DEFAULT_MANAGEMENT_PORT, DEFAULT_MCP_PORT, type ManagerConfig } from './config.js'
 
 interface WorkerClientFactory {
@@ -135,6 +136,8 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     rotate: () => remoteAccountManager.rotateAccount(),
   }
 
+  const resourceMonitor = createResourceMonitor(() => database.workers.listWorkers().map((worker) => ({ id: worker.id, name: worker.name, pid: worker.pid })))
+
   const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
   const dashboardDir = config.dashboardDir ?? (existsSync(defaultDashboardDir) ? defaultDashboardDir : undefined)
   const managementRuntime = await createManagementApi({
@@ -149,6 +152,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     },
     port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT,
     dashboardDir,
+    resources: resourceMonitor,
   })
   let closed = false
 

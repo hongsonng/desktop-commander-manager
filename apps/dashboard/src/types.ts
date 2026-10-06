@@ -55,4 +55,23 @@ export interface ToolCallView {
   createdAt: string
 }
 
+export interface ResourceProcessUsage {
+  id: string
+  label: string
+  pid: number | null
+  memoryBytes: number
+  cpuPercent: number
+  processCount: number
+  status: 'running' | 'stopped'
+}
+
+export interface ResourceUsageView {
+  available: boolean
+  sampledAt: string
+  total: { memoryBytes: number; cpuPercent: number }
+  system: { memoryUsedBytes: number; totalMemoryBytes: number; cpuPercent: number }
+  items: ResourceProcessUsage[]
+  error?: string
+}
+
 export type WorkerAction = 'restart' | 'enable' | 'disable'
