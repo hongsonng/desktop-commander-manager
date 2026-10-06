@@ -64,12 +64,12 @@ describe('MCP HTTP proxy', () => {
       expect(listed.body.result.tools[0]).toMatchObject({ title: 'Echo tool', annotations: { title: 'Echo tool', readOnlyHint: true } })
       expect(listed.body.result.tools[0]._meta).toBeUndefined()
 
-      const called = await rpc('tools/call', 2, { name: 'echo', arguments: { text: 'modern-hi', path: 'D:/repo/file.txt', content: 'do-not-store-this' }, _meta: envelope })
+      const called = await rpc('tools/call', 2, { name: 'echo', arguments: { text: 'modern-hi', path: 'D:/repo/file.txt', command: 'curl --api-key do-not-store-this', content: 'do-not-store-this' }, _meta: envelope })
       expect(called.status).toBe(200)
       expect(called.body.result).toMatchObject({ resultType: 'complete', content: [{ type: 'text', text: 'modern-hi' }] })
       expect(router.contexts.some((context) => context.sessionId === 'chat-modern')).toBe(true)
       expect(audits).toHaveLength(1)
-      expect(audits[0]).toMatchObject({ sessionId: 'chat-modern', workerId: 'worker-1', toolName: 'echo', argsSummary: 'path=D:/repo/file.txt', status: 'OK', failedOver: false })
+      expect(audits[0]).toMatchObject({ sessionId: 'chat-modern', workerId: 'worker-1', toolName: 'echo', argsSummary: 'path=D:/repo/file.txt | command=curl --api-key ***', status: 'OK', failedOver: false })
       expect(Number(audits[0].durationMs)).toBeGreaterThanOrEqual(0)
       expect(JSON.stringify(audits[0])).not.toContain('do-not-store-this')
     } finally { await runtime.close() }
