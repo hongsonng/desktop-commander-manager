@@ -1,10 +1,12 @@
 import { execFile as execFileCallback, spawn } from 'node:child_process'
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { join, resolve } from 'node:path'
 import {
   WINDOWS_AUTOSTART_TASK_NAME,
   WINDOWS_TUNNEL_TASK_NAME,
+  getDefaultTunnelProfilePath,
   createWindowsAutostartDeleteSpec,
   createWindowsAutostartRunSpec,
   createWindowsAutostartTaskSpec,
@@ -39,6 +41,7 @@ async function commandExists(command: string): Promise<boolean> {
 }
 
 export type AutostartMechanism = 'task' | 'run-key' | false
+export type TunnelAutostartSkipReason = 'client-not-found' | 'profile-not-found' | null
 
 function taskQuerySpec(taskName: string): CommandSpec {
   return {
@@ -75,23 +78,26 @@ async function entryStatus(taskName: string): Promise<AutostartMechanism> {
   return false
 }
 
-export async function installAutostart(root = process.cwd()): Promise<{ manager: Exclude<AutostartMechanism, false>; tunnel: AutostartMechanism }> {
+export async function installAutostart(root = process.cwd()): Promise<{ manager: Exclude<AutostartMechanism, false>; tunnel: AutostartMechanism; tunnelSkipReason: TunnelAutostartSkipReason }> {
   if (process.platform !== 'win32') throw new Error('Windows autostart is only supported on Windows')
   const repoRoot = resolve(root)
   const managerRunner = join(repoRoot, 'scripts', 'run-manager-headless.ps1')
   const manager = await installEntry(WINDOWS_AUTOSTART_TASK_NAME, managerRunner, createWindowsAutostartTaskSpec(repoRoot))
 
-  const tunnelAvailable = await commandExists('tunnel-client')
+  const tunnelClientAvailable = await commandExists('tunnel-client')
+  const tunnelProfileAvailable = existsSync(getDefaultTunnelProfilePath())
   let tunnel: AutostartMechanism = false
-  if (tunnelAvailable) {
+  let tunnelSkipReason: TunnelAutostartSkipReason = null
+  if (tunnelClientAvailable && tunnelProfileAvailable) {
     const tunnelRunner = join(repoRoot, 'scripts', 'run-tunnel-headless.ps1')
     tunnel = await installEntry(WINDOWS_TUNNEL_TASK_NAME, tunnelRunner, createWindowsTunnelAutostartTaskSpec(repoRoot))
   } else {
+    tunnelSkipReason = tunnelClientAvailable ? 'profile-not-found' : 'client-not-found'
     await runSpec(createWindowsAutostartDeleteSpec(WINDOWS_TUNNEL_TASK_NAME), true)
     await runSpec(createWindowsRunKeyDeleteSpec(WINDOWS_TUNNEL_TASK_NAME), true)
   }
 
-  return { manager, tunnel }
+  return { manager, tunnel, tunnelSkipReason }
 }
 
 export async function uninstallAutostart(): Promise<void> {
@@ -121,7 +127,13 @@ async function main(): Promise<void> {
   if (action === 'install') {
     const result = await installAutostart()
     console.log(`Manager autostart: installed via ${describeMechanism(result.manager)}`)
-    console.log(`Secure MCP Tunnel autostart: ${result.tunnel ? `installed via ${describeMechanism(result.tunnel)}` : 'skipped (tunnel-client not found)'}`)
+    if (result.tunnel) {
+      console.log(`Secure MCP Tunnel autostart: installed via ${describeMechanism(result.tunnel)}`)
+    } else if (result.tunnelSkipReason === 'profile-not-found') {
+      console.log(`Secure MCP Tunnel autostart: skipped (profile not configured: ${getDefaultTunnelProfilePath()})`)
+    } else {
+      console.log('Secure MCP Tunnel autostart: skipped (tunnel-client not found)')
+    }
     return
   }
   if (action === 'uninstall') {

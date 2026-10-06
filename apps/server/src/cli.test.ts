@@ -49,6 +49,16 @@ describe('CLI defaults', () => {
     expect(api.createWindowsAutostartDeleteSpec!('DesktopCommanderManager')).toEqual({ command, args: ['/Delete', '/TN', 'DesktopCommanderManager', '/F'] })
   })
 
+  it('resolves the default Secure MCP Tunnel profile from APPDATA', () => {
+    const api = cli as unknown as {
+      getDefaultTunnelProfilePath?: (env: NodeJS.ProcessEnv) => string
+    }
+    expect(api.getDefaultTunnelProfilePath).toBeTypeOf('function')
+    expect(api.getDefaultTunnelProfilePath!({ APPDATA: 'C:\\Users\\test\\AppData\\Roaming' })).toBe(
+      join('C:\\Users\\test\\AppData\\Roaming', 'tunnel-client', 'desktop-commander-manager.yaml'),
+    )
+  })
+
   it('builds a per-user HKCU Run fallback when Task Scheduler is not permitted', () => {
     const root = resolve('D:/example/dc-manager')
     const api = cli as unknown as {
