@@ -33,8 +33,8 @@ async function connect(runtime: Awaited<ReturnType<typeof createMcpHttpServer>>)
 
 describe('MCP HTTP proxy', () => {
   it('supports stateless MCP 2026-07-28 discovery, tool listing, and tool calls', async () => {
-    const router = new FakeRouter(); const worker1 = fakeClient({ withUiMeta: true })
-    const runtime = await createMcpHttpServer({ host: '127.0.0.1', port: 0, sessionRouter: router, retryPolicy: new RetryPolicy(), getWorkerClient: () => worker1 })
+    const router = new FakeRouter(); const worker1 = fakeClient({ withUiMeta: true }); const audits: Array<Record<string, unknown>> = []
+    const runtime = await createMcpHttpServer({ host: '127.0.0.1', port: 0, sessionRouter: router, retryPolicy: new RetryPolicy(), getWorkerClient: () => worker1, onToolCall: (audit) => audits.push(audit) })
     const rpc = async (method: string, id: string | number, params: Record<string, unknown>) => {
       const response = await fetch(runtime.url, {
         method: 'POST',
@@ -64,10 +64,14 @@ describe('MCP HTTP proxy', () => {
       expect(listed.body.result.tools[0]).toMatchObject({ title: 'Echo tool', annotations: { title: 'Echo tool', readOnlyHint: true } })
       expect(listed.body.result.tools[0]._meta).toBeUndefined()
 
-      const called = await rpc('tools/call', 2, { name: 'echo', arguments: { text: 'modern-hi' }, _meta: envelope })
+      const called = await rpc('tools/call', 2, { name: 'echo', arguments: { text: 'modern-hi', path: 'D:/repo/file.txt', content: 'do-not-store-this' }, _meta: envelope })
       expect(called.status).toBe(200)
       expect(called.body.result).toMatchObject({ resultType: 'complete', content: [{ type: 'text', text: 'modern-hi' }] })
       expect(router.contexts.some((context) => context.sessionId === 'chat-modern')).toBe(true)
+      expect(audits).toHaveLength(1)
+      expect(audits[0]).toMatchObject({ sessionId: 'chat-modern', workerId: 'worker-1', toolName: 'echo', argsSummary: 'path=D:/repo/file.txt', status: 'OK', failedOver: false })
+      expect(Number(audits[0].durationMs)).toBeGreaterThanOrEqual(0)
+      expect(JSON.stringify(audits[0])).not.toContain('do-not-store-this')
     } finally { await runtime.close() }
   })
 

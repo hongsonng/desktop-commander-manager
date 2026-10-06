@@ -28,6 +28,20 @@ export interface ConnectionInfo {
   workerStrategy: 'sticky-failover'
 }
 
+type ToolCallMetadata = {
+  toolName?: unknown
+  argsSummary?: unknown
+  status?: unknown
+  durationMs?: unknown
+  failedOver?: unknown
+  error?: unknown
+}
+
+function parseToolCallMetadata(value: string | null): ToolCallMetadata {
+  if (!value) return {}
+  try { return JSON.parse(value) as ToolCallMetadata } catch { return {} }
+}
+
 type Options = {
   database: ManagerDatabase
   actions: ManagementActions
@@ -50,7 +64,25 @@ export async function createManagementApi(options: Options): Promise<{ url: stri
   } satisfies ConnectionInfo))
   app.get('/api/workers', async () => options.database.workers.listWorkers().map((worker) => ({ ...worker, activeSessionCount: options.database.sessions.countByWorker(worker.id) })))
   app.get('/api/sessions', async () => options.database.sessions.listSessions())
-  app.get('/api/events', async () => options.database.events.listEvents())
+  app.get('/api/events', async () => options.database.events.listEvents(200).filter((event) => event.type !== 'TOOL_CALL').slice(0, 100))
+  app.get('/api/tool-calls', async () => options.database.events.listEvents(500)
+    .filter((event) => event.type === 'TOOL_CALL')
+    .slice(0, 100)
+    .map((event) => {
+      const metadata = parseToolCallMetadata(event.metadataJson)
+      return {
+        id: event.id,
+        sessionId: event.sessionId,
+        workerId: event.workerId,
+        toolName: typeof metadata.toolName === 'string' ? metadata.toolName : event.message.split(' ')[0] ?? 'unknown',
+        argsSummary: typeof metadata.argsSummary === 'string' ? metadata.argsSummary : '',
+        status: metadata.status === 'ERROR' ? 'ERROR' : 'OK',
+        durationMs: typeof metadata.durationMs === 'number' ? metadata.durationMs : 0,
+        failedOver: metadata.failedOver === true,
+        error: typeof metadata.error === 'string' ? metadata.error : null,
+        createdAt: event.createdAt,
+      }
+    }))
 
   for (const action of ['restart', 'enable', 'disable'] as const) {
     app.post(`/api/workers/:id/${action}`, async (request, reply) => {

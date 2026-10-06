@@ -41,3 +41,24 @@ dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
 @media (max-width: 860px) { .stats { grid-template-columns: 1fr 1fr; } }
 @media (max-width: 680px) { .remote-form { grid-template-columns: 1fr; } .remote-form button { width: 100%; } }
 @media (max-width: 560px) { .stats { grid-template-columns: 1fr; } .panel-heading { align-items: flex-start; flex-direction: column; } .panel-heading > button { width: 100%; } }
+
+/* Live tool call monitor */
+.activity-panel { overflow: hidden; }
+.live-badge { color: #13744a; background: #e8f7ef; }
+.tool-call-table-wrap { max-height: 430px; border: 1px solid #edf0f4; border-radius: 10px; }
+.tool-call-table { min-width: 980px; }
+.tool-call-table thead th { position: sticky; top: 0; z-index: 1; background: #f8fafc; }
+.tool-call-table tbody tr:hover { background: #fafbfd; }
+.tool-call-table td { vertical-align: middle; }
+.tool-name { font-weight: 700; color: #243247; }
+.tool-args { max-width: 390px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #566578; }
+.session-code { display: inline-block; max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
+.nowrap { white-space: nowrap; }
+.tool-kind { display: inline-block; border-radius: 999px; padding: 4px 7px; font-size: 9px; font-weight: 800; letter-spacing: .05em; background: #eef2f7; color: #53647a; }
+.tool-kind-read { color: #225b8c; background: #eaf4ff; }
+.tool-kind-write { color: #8a5a0a; background: #fff4d8; }
+.tool-kind-command { color: #8f2929; background: #fdecec; }
+.tool-status-ok { color: #13744a; background: #e8f7ef; }
+.tool-status-error { color: #9a3636; background: #fdecec; }
+.failover-note { display: block; margin-top: 3px; color: #846010; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+.activity-empty { margin-top: 14px; }

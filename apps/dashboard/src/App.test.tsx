@@ -7,7 +7,7 @@ import { App } from './App'
 import * as api from './api'
 
 vi.mock('./api', () => ({
-  getHealth: vi.fn(), getConnectionInfo: vi.fn(), getWorkers: vi.fn(), getSessions: vi.fn(), getEvents: vi.fn(), workerAction: vi.fn(),
+  getHealth: vi.fn(), getConnectionInfo: vi.fn(), getWorkers: vi.fn(), getSessions: vi.fn(), getEvents: vi.fn(), getToolCalls: vi.fn(), workerAction: vi.fn(),
   getRemoteAccounts: vi.fn(), addRemoteAccount: vi.fn(), remoteAccountAction: vi.fn(), rotateRemoteAccount: vi.fn(),
 }))
 
@@ -30,6 +30,7 @@ beforeEach(() => {
   ])
   vi.mocked(api.getSessions).mockResolvedValue([{ sessionId: 'chat-a', workerId: 'worker-1', createdAt: now, lastUsedAt: now }])
   vi.mocked(api.getEvents).mockResolvedValue([{ id: 1, sessionId: 'chat-a', workerId: 'worker-1', type: 'SESSION_FAILOVER', message: 'worker-2 -> worker-1', metadataJson: null, createdAt: now }])
+  vi.mocked(api.getToolCalls).mockResolvedValue([{ id: 2, sessionId: 'chat-a', workerId: 'worker-1', toolName: 'read_file', argsSummary: 'path=D:/repo/file.txt', status: 'OK', durationMs: 12, failedOver: false, createdAt: now }])
   vi.mocked(api.workerAction).mockResolvedValue(undefined)
   vi.mocked(api.remoteAccountAction).mockResolvedValue(undefined)
   vi.mocked(api.addRemoteAccount).mockResolvedValue(undefined)
@@ -45,8 +46,12 @@ describe('dashboard', () => {
     expect(screen.getByText('http://127.0.0.1:8787/mcp')).toBeTruthy()
     expect(await screen.findByText('Worker 1')).toBeTruthy()
     expect(screen.getByText('3 sessions')).toBeTruthy()
-    expect(screen.getByText('chat-a')).toBeTruthy()
+    expect(screen.getAllByText('chat-a')).toHaveLength(2)
     expect(screen.getByText('SESSION_FAILOVER')).toBeTruthy()
+    expect(await screen.findByText('Live Tool Calls')).toBeTruthy()
+    expect(screen.getByText('read_file')).toBeTruthy()
+    expect(screen.getByText('path=D:/repo/file.txt')).toBeTruthy()
+    expect(screen.getByText('12 ms')).toBeTruthy()
     expect(await screen.findByText('Remote accounts')).toBeTruthy()
     expect(screen.getByText('Account A')).toBeTruthy()
     expect(screen.getByText('Paired')).toBeTruthy()

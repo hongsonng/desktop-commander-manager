@@ -5,13 +5,14 @@ import {
   getEvents,
   getHealth,
   getRemoteAccounts,
+  getToolCalls,
   getSessions,
   getWorkers,
   remoteAccountAction,
   rotateRemoteAccount,
   workerAction,
 } from './api'
-import type { ConnectionInfo, EventView, HealthResponse, RemoteAccountAction, RemoteAccountView, SessionView, WorkerAction, WorkerView } from './types'
+import type { ConnectionInfo, EventView, HealthResponse, RemoteAccountAction, RemoteAccountView, SessionView, ToolCallView, WorkerAction, WorkerView } from './types'
 import './styles.css'
 
 function formatUptime(ms: number): string {
@@ -27,6 +28,17 @@ function formatDate(value: string | null): string {
   return value ? new Date(value).toLocaleString() : 'â€”'
 }
 
+function formatTime(value: string): string {
+  return new Date(value).toLocaleTimeString()
+}
+
+function toolKind(name: string): 'READ' | 'WRITE' | 'COMMAND' | 'TOOL' {
+  if (['start_process', 'interact_with_process', 'force_terminate', 'kill_process'].includes(name)) return 'COMMAND'
+  if (/^(write_|edit_|create_|move_|set_|kill_)/.test(name)) return 'WRITE'
+  if (/^(read_|get_|list_|start_search|get_more_search_results|stop_search)/.test(name)) return 'READ'
+  return 'TOOL'
+}
+
 export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
@@ -34,6 +46,7 @@ export function App() {
   const [remoteAccounts, setRemoteAccounts] = useState<RemoteAccountView[]>([])
   const [sessions, setSessions] = useState<SessionView[]>([])
   const [events, setEvents] = useState<EventView[]>([])
+  const [toolCalls, setToolCalls] = useState<ToolCallView[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
   const [accountId, setAccountId] = useState('')
@@ -41,8 +54,8 @@ export function App() {
 
   const refresh = useCallback(async () => {
     try {
-      const [nextHealth, nextConnectionInfo, nextWorkers, nextRemoteAccounts, nextSessions, nextEvents] = await Promise.all([
-        getHealth(), getConnectionInfo(), getWorkers(), getRemoteAccounts(), getSessions(), getEvents(),
+      const [nextHealth, nextConnectionInfo, nextWorkers, nextRemoteAccounts, nextSessions, nextEvents, nextToolCalls] = await Promise.all([
+        getHealth(), getConnectionInfo(), getWorkers(), getRemoteAccounts(), getSessions(), getEvents(), getToolCalls(),
       ])
       setHealth(nextHealth)
       setConnectionInfo(nextConnectionInfo)
@@ -50,6 +63,7 @@ export function App() {
       setRemoteAccounts(nextRemoteAccounts)
       setSessions(nextSessions)
       setEvents(nextEvents)
+      setToolCalls(nextToolCalls)
       setError(null)
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
@@ -58,7 +72,7 @@ export function App() {
 
   useEffect(() => {
     void refresh()
-    const timer = window.setInterval(() => void refresh(), 5000)
+    const timer = window.setInterval(() => void refresh(), 2000)
     return () => window.clearInterval(timer)
   }, [refresh])
 
@@ -123,6 +137,32 @@ export function App() {
       <article><span>Hosted profiles</span><strong>{remoteAccounts.length}</strong></article>
       <article><span>Active sessions</span><strong>{sessions.length}</strong></article>
       <article><span>Uptime</span><strong>{health ? formatUptime(health.uptimeMs) : 'â€”'}</strong></article>
+    </section>
+
+    <section className="panel activity-panel">
+      <div className="panel-heading">
+        <div><p className="eyebrow">CHATGPT ACTIVITY</p><h2>Live Tool Calls</h2></div>
+        <div className="badge-group"><span className="badge live-badge">LIVE · 2s</span><button className="ghost" onClick={() => void refresh()}>Refresh</button></div>
+      </div>
+      <p className="hint">Shows the latest tool calls routed through this manager. File contents and edit payloads are not stored; only safe target/command summaries are shown.</p>
+      {toolCalls.length > 0 ? <div className="table-wrap tool-call-table-wrap">
+        <table className="tool-call-table">
+          <thead><tr><th>Time</th><th>Type</th><th>Tool</th><th>Target / args</th><th>Worker</th><th>Session</th><th>Duration</th><th>Status</th></tr></thead>
+          <tbody>{toolCalls.map((call) => {
+            const kind = toolKind(call.toolName)
+            return <tr key={call.id} title={call.error ?? undefined}>
+              <td className="nowrap">{formatTime(call.createdAt)}</td>
+              <td><span className={`tool-kind tool-kind-${kind.toLowerCase()}`}>{kind}</span></td>
+              <td><code className="tool-name">{call.toolName}</code>{call.failedOver && <span className="failover-note">failover</span>}</td>
+              <td className="tool-args" title={call.argsSummary}>{call.argsSummary || '—'}</td>
+              <td><code>{call.workerId ?? '—'}</code></td>
+              <td><code className="session-code" title={call.sessionId ?? undefined}>{call.sessionId ?? '—'}</code></td>
+              <td className="nowrap">{call.durationMs} ms</td>
+              <td><span className={`badge tool-status-${call.status.toLowerCase()}`}>{call.status}</span></td>
+            </tr>
+          })}</tbody>
+        </table>
+      </div> : <div className="empty-state activity-empty">No tool calls yet. Use Desktop Commander Manager from ChatGPT and activity will appear here automatically.</div>}
     </section>
 
     <section className="panel">
