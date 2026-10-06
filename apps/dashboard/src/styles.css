@@ -39,6 +39,8 @@ dl { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 18px 0; }
 
 /* Live tool call monitor */
 .activity-panel { overflow: hidden; }
+.sessions-table-wrap { max-height: 360px; overscroll-behavior: contain; scrollbar-gutter: stable; }
+.sessions-table-wrap thead th { position: sticky; top: 0; z-index: 1; background: #fff; }
 .live-badge { color: #13744a; background: #e8f7ef; }
 .tool-call-table-wrap { max-height: 430px; border: 1px solid #edf0f4; border-radius: 10px; }
 .tool-call-table { min-width: 980px; }

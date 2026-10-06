@@ -144,7 +144,7 @@ export function App() {
 
     <div className="two-column">
       <section className="panel"><div className="panel-heading"><div><p className="eyebrow">ROUTING</p><h2>Sessions</h2></div></div>
-        <div className="table-wrap"><table><thead><tr><th>Session</th><th>Worker</th><th>Last used</th></tr></thead><tbody>{sessions.map((session) => <tr key={session.sessionId}><td><code>{session.sessionId}</code></td><td>{session.workerId}</td><td>{formatDate(session.lastUsedAt)}</td></tr>)}</tbody></table></div>
+        <div className="table-wrap sessions-table-wrap"><table><thead><tr><th>Session</th><th>Worker</th><th>Last used</th></tr></thead><tbody>{sessions.map((session) => <tr key={session.sessionId}><td><code>{session.sessionId}</code></td><td>{session.workerId}</td><td>{formatDate(session.lastUsedAt)}</td></tr>)}</tbody></table></div>
       </section>
       <section className="panel"><div className="panel-heading"><div><p className="eyebrow">AUDIT</p><h2>Recent events</h2></div></div>
         <div className="event-list">{events.map((event) => <article key={event.id}><div><span className="event-type">{event.type}</span><time>{formatDate(event.createdAt)}</time></div><p>{event.message}</p></article>)}</div>
