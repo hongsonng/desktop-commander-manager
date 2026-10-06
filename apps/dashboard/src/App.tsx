@@ -1,18 +1,14 @@
-import { type FormEvent, useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import {
-  addRemoteAccount,
   getConnectionInfo,
   getEvents,
   getHealth,
-  getRemoteAccounts,
   getToolCalls,
   getSessions,
   getWorkers,
-  remoteAccountAction,
-  rotateRemoteAccount,
   workerAction,
 } from './api'
-import type { ConnectionInfo, EventView, HealthResponse, RemoteAccountAction, RemoteAccountView, SessionView, ToolCallView, WorkerAction, WorkerView } from './types'
+import type { ConnectionInfo, EventView, HealthResponse, SessionView, ToolCallView, WorkerAction, WorkerView } from './types'
 import './styles.css'
 
 function formatUptime(ms: number): string {
@@ -43,24 +39,20 @@ export function App() {
   const [health, setHealth] = useState<HealthResponse | null>(null)
   const [connectionInfo, setConnectionInfo] = useState<ConnectionInfo | null>(null)
   const [workers, setWorkers] = useState<WorkerView[]>([])
-  const [remoteAccounts, setRemoteAccounts] = useState<RemoteAccountView[]>([])
   const [sessions, setSessions] = useState<SessionView[]>([])
   const [events, setEvents] = useState<EventView[]>([])
   const [toolCalls, setToolCalls] = useState<ToolCallView[]>([])
   const [error, setError] = useState<string | null>(null)
   const [busyAction, setBusyAction] = useState<string | null>(null)
-  const [accountId, setAccountId] = useState('')
-  const [accountName, setAccountName] = useState('')
 
   const refresh = useCallback(async () => {
     try {
-      const [nextHealth, nextConnectionInfo, nextWorkers, nextRemoteAccounts, nextSessions, nextEvents, nextToolCalls] = await Promise.all([
-        getHealth(), getConnectionInfo(), getWorkers(), getRemoteAccounts(), getSessions(), getEvents(), getToolCalls(),
+      const [nextHealth, nextConnectionInfo, nextWorkers, nextSessions, nextEvents, nextToolCalls] = await Promise.all([
+        getHealth(), getConnectionInfo(), getWorkers(), getSessions(), getEvents(), getToolCalls(),
       ])
       setHealth(nextHealth)
       setConnectionInfo(nextConnectionInfo)
       setWorkers(nextWorkers)
-      setRemoteAccounts(nextRemoteAccounts)
       setSessions(nextSessions)
       setEvents(nextEvents)
       setToolCalls(nextToolCalls)
@@ -84,36 +76,6 @@ export function App() {
     finally { setBusyAction(null) }
   }
 
-  const remoteAct = async (accountIdValue: string, action: RemoteAccountAction) => {
-    const key = `account:${accountIdValue}:${action}`
-    setBusyAction(key)
-    try { await remoteAccountAction(accountIdValue, action); await refresh() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusyAction(null) }
-  }
-
-  const rotateAccount = async () => {
-    setBusyAction('account:rotate')
-    try { await rotateRemoteAccount(); await refresh() }
-    catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusyAction(null) }
-  }
-
-  const submitAccount = async (event: FormEvent) => {
-    event.preventDefault()
-    const id = accountId.trim()
-    const name = accountName.trim()
-    if (!id || !name) return
-    setBusyAction('account:add')
-    try {
-      await addRemoteAccount({ id, name })
-      setAccountId('')
-      setAccountName('')
-      await refresh()
-    } catch (cause) { setError(cause instanceof Error ? cause.message : String(cause)) }
-    finally { setBusyAction(null) }
-  }
-
   return <main className="shell">
     <header className="page-header">
       <div><p className="eyebrow">LOCAL CONTROL PLANE</p><h1>Desktop Commander Manager</h1></div>
@@ -134,7 +96,6 @@ export function App() {
 
     <section className="stats" aria-label="Manager summary">
       <article><span>Workers</span><strong>{workers.length}</strong></article>
-      <article><span>Hosted profiles</span><strong>{remoteAccounts.length}</strong></article>
       <article><span>Active sessions</span><strong>{sessions.length}</strong></article>
       <article><span>Uptime</span><strong>{health ? formatUptime(health.uptimeMs) : 'â€”'}</strong></article>
     </section>
@@ -163,41 +124,6 @@ export function App() {
           })}</tbody>
         </table>
       </div> : <div className="empty-state activity-empty">No tool calls yet. Use Desktop Commander Manager from ChatGPT and activity will appear here automatically.</div>}
-    </section>
-
-    <section className="panel">
-      <div className="panel-heading">
-        <div><p className="eyebrow">OPTIONAL HOSTED RDC PROFILES</p><h2>Remote accounts</h2></div>
-        <button className="primary" aria-label="Rotate next account" disabled={busyAction !== null || remoteAccounts.filter((item) => item.enabled).length === 0} onClick={() => void rotateAccount()}>Rotate next</button>
-      </div>
-      <form className="remote-form" onSubmit={(event) => void submitAccount(event)}>
-        <label>Account id<input aria-label="Account id" value={accountId} onChange={(event) => setAccountId(event.target.value)} placeholder="account-a" /></label>
-        <label>Account name<input aria-label="Account name" value={accountName} onChange={(event) => setAccountName(event.target.value)} placeholder="Main account" /></label>
-        <button type="submit" disabled={busyAction !== null || !accountId.trim() || !accountName.trim()}>Add account</button>
-      </form>
-      <p className="hint">These profiles are only for Desktop Commander's hosted Remote MCP flow. They are not used by the Direct local ChatGPT connection above, which goes straight through this manager to local workers.</p>
-      <div className="worker-grid account-grid">
-        {remoteAccounts.map((account) => <article className="worker-card" key={account.id}>
-          <div className="worker-title">
-            <div><h3>{account.name}</h3><code>{account.id}</code></div>
-            <div className="badge-group"><span className={`badge ${account.paired ? 'paired' : 'unpaired'}`}>{account.paired ? 'Paired' : 'Not paired'}</span><span className={`badge state-${account.status.toLowerCase()}`}>{account.status}</span></div>
-          </div>
-          <dl>
-            <div><dt>PID</dt><dd>{account.pid ?? 'â€”'}</dd></div>
-            <div><dt>Last used</dt><dd>{formatDate(account.lastUsedAt)}</dd></div>
-            <div className="wide"><dt>Profile</dt><dd title={account.profileDir}>{account.profileDir}</dd></div>
-          </dl>
-          <div className="actions">
-            {account.status === 'RUNNING' || account.status === 'STARTING'
-              ? <button disabled={busyAction !== null} aria-label={`Stop ${account.name}`} onClick={() => void remoteAct(account.id, 'stop')}>Stop</button>
-              : <button disabled={busyAction !== null || !account.enabled} aria-label={`Activate ${account.name}`} onClick={() => void remoteAct(account.id, 'activate')}>Activate</button>}
-            {account.enabled
-              ? <button className="danger" disabled={busyAction !== null} aria-label={`Disable ${account.name}`} onClick={() => void remoteAct(account.id, 'disable')}>Disable</button>
-              : <button disabled={busyAction !== null} aria-label={`Enable ${account.name}`} onClick={() => void remoteAct(account.id, 'enable')}>Enable</button>}
-          </div>
-        </article>)}
-        {remoteAccounts.length === 0 && <div className="empty-state">Add an account profile to start pairing and rotation.</div>}
-      </div>
     </section>
 
     <section className="panel">

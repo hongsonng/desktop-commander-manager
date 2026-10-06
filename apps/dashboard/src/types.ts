@@ -1,6 +1,4 @@
 export type WorkerStatus = 'STOPPED' | 'STARTING' | 'READY' | 'BUSY' | 'DEGRADED' | 'OFFLINE' | 'DISABLED'
-export type RemoteAccountStatus = 'STOPPED' | 'STARTING' | 'RUNNING' | 'PAIRING' | 'ERROR' | 'DISABLED'
-
 export interface HealthResponse {
   status: string
   startedAt: string
@@ -25,20 +23,6 @@ export interface WorkerView {
   createdAt: string
   updatedAt: string
   activeSessionCount: number
-}
-
-export interface RemoteAccountView {
-  id: string
-  name: string
-  enabled: boolean
-  status: RemoteAccountStatus
-  pid: number | null
-  profileDir: string
-  paired: boolean
-  lastStartedAt: string | null
-  lastUsedAt: string | null
-  createdAt: string
-  updatedAt: string
 }
 
 export interface SessionView {
@@ -72,4 +56,3 @@ export interface ToolCallView {
 }
 
 export type WorkerAction = 'restart' | 'enable' | 'disable'
-export type RemoteAccountAction = 'activate' | 'stop' | 'enable' | 'disable'
