@@ -35,13 +35,25 @@ Double-click:
 install-autostart.bat
 ```
 
-Script sẽ tự `npm install`, build dashboard, đăng ký autostart và khởi động manager ngay. Installer ưu tiên Windows Task Scheduler; nếu tài khoản Windows hiện tại không có quyền tạo task, nó tự fallback sang `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` nên không cần chạy Administrator. Từ những lần đăng nhập Windows sau, manager chạy headless tự động. Nếu `tunnel-client` đã có trên máy, Secure MCP Tunnel cũng được đăng ký theo cùng cơ chế.
+Script sẽ tự `npm install`, build dashboard, đăng ký autostart và khởi động manager ngay. Installer ưu tiên Windows Task Scheduler; nếu tài khoản Windows hiện tại không có quyền tạo task, nó tự fallback sang `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` nên không cần chạy Administrator. Từ những lần đăng nhập Windows sau, manager chạy headless tự động. Secure MCP Tunnel chỉ được đăng ký khi `tunnel-client` **và** profile `desktop-commander-manager` đã được cấu hình.
 
 Để gỡ autostart:
 
 ```text
 uninstall-autostart.bat
 ```
+
+### Cấu hình Secure MCP Tunnel một lần
+
+Sau khi tạo tunnel trong OpenAI Platform và tạo **Runtime API key** dạng Restricted có quyền **Tunnels Read + Use**, double-click:
+
+```text
+setup-tunnel.bat
+```
+
+Script sẽ nhận `tunnel_id` và API key bằng secure prompt, lưu key ngoài repo tại `%APPDATA%\tunnel-client\secrets\desktop-commander-manager.api-key`, tạo profile `%APPDATA%\tunnel-client\desktop-commander-manager.yaml` trỏ tới `http://127.0.0.1:8787/mcp`, chạy `doctor`, rồi chỉ bật tunnel autostart khi kiểm tra thành công.
+
+Không dán runtime API key vào source code, `.env`, Git hoặc chat.
 
 ### Chạy tay / debug
 

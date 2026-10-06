@@ -14,6 +14,7 @@
                     "autostart:install": "tsx apps/server/src/autostart-cli.ts install",
                     "autostart:uninstall": "tsx apps/server/src/autostart-cli.ts uninstall",
                     "autostart:status": "tsx apps/server/src/autostart-cli.ts status",
+                    "tunnel:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-tunnel.ps1",
                     "smoke:windows":  "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1"
                 },
     "devDependencies":  {

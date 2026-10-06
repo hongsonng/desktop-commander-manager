@@ -2,7 +2,14 @@ import { join, resolve } from 'node:path'
 
 export const WINDOWS_AUTOSTART_TASK_NAME = 'DesktopCommanderManager'
 export const WINDOWS_TUNNEL_TASK_NAME = 'DesktopCommanderTunnel'
+export const TUNNEL_PROFILE_NAME = 'desktop-commander-manager'
 export const WINDOWS_RUN_KEY = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+
+export function getDefaultTunnelProfilePath(env: NodeJS.ProcessEnv = process.env): string {
+  const appData = env.APPDATA ?? (env.USERPROFILE ? join(env.USERPROFILE, 'AppData', 'Roaming') : undefined)
+  if (!appData) throw new Error('APPDATA or USERPROFILE is required to resolve the tunnel profile path')
+  return join(appData, 'tunnel-client', `${TUNNEL_PROFILE_NAME}.yaml`)
+}
 
 function schtasksCommand(env: NodeJS.ProcessEnv = process.env): string {
   return join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'schtasks.exe')

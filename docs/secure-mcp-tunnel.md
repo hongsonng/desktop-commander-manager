@@ -14,30 +14,30 @@ Official guide: https://developers.openai.com/api/docs/guides/secure-mcp-tunnels
 
 ## Configure the tunnel
 
-This is a one-time setup. After the `desktop-commander-manager` tunnel profile works once, `install-autostart.bat` can register `DesktopCommanderTunnel` so the profile starts automatically at Windows logon together with the manager.
+This is a one-time setup. Create or inspect the tunnel in Platform tunnel settings, then create a **Restricted Runtime API key** with **Tunnels Read + Use**.
 
-Start with the current CLI help because tunnel-client flags may evolve:
-
-```powershell
-tunnel-client help quickstart
-```
-
-Use the tunnel ID shown in Platform settings and configure the private MCP target as:
+On this repository, run:
 
 ```text
-http://127.0.0.1:8787/mcp
+setup-tunnel.bat
 ```
 
-For HTTP MCP, use the current `--mcp-server-url` option shown by the official quickstart. Set `CONTROL_PLANE_API_KEY` only in the process/session that runs tunnel-client.
+The setup script asks for the `tunnel_id` and runtime key using a hidden prompt. It stores the key outside the repository under `%APPDATA%\tunnel-client\secrets`, restricts that file to the current Windows user, creates profile `desktop-commander-manager` with MCP target `http://127.0.0.1:8787/mcp`, and keeps only a `file:` secret reference in YAML.
 
-Validate before connecting ChatGPT:
+The script then runs:
 
 ```powershell
 tunnel-client doctor --profile desktop-commander-manager --explain
-tunnel-client run --profile desktop-commander-manager
 ```
 
-After that first successful validation, stop the foreground tunnel and run `install-autostart.bat` again. If `tunnel-client` is discoverable in `PATH`, the installer registers and starts the tunnel autostart entry automatically. It prefers Task Scheduler and falls back to the per-user HKCU Run key when Task Scheduler is denied. The headless tunnel runner waits for manager health and reconnects the tunnel if it exits.
+Only after `doctor` succeeds does it rerun the autostart installer so `DesktopCommanderTunnel` starts automatically at Windows logon. Autostart prefers Task Scheduler and falls back to the per-user HKCU Run key when Task Scheduler is denied. The headless tunnel runner waits for manager health and reconnects the tunnel if it exits.
+
+For CLI discovery or manual troubleshooting, use:
+
+```powershell
+tunnel-client help quickstart
+tunnel-client run --profile desktop-commander-manager
+```
 
 The tunnel is outbound-only: the local machine needs HTTPS access to OpenAI and local access to `127.0.0.1:8787`; the MCP router does not need an inbound internet-facing listener.
 

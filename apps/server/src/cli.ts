@@ -6,6 +6,8 @@ import type { ManagerConfig } from './config.js'
 export {
   WINDOWS_AUTOSTART_TASK_NAME,
   WINDOWS_TUNNEL_TASK_NAME,
+  TUNNEL_PROFILE_NAME,
+  getDefaultTunnelProfilePath,
   createWindowsAutostartDeleteSpec,
   createWindowsAutostartRunSpec,
   createWindowsAutostartTaskSpec,
