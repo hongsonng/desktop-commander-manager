@@ -30,7 +30,7 @@ The script then runs:
 tunnel-client doctor --profile desktop-commander-manager --explain
 ```
 
-Only after `doctor` succeeds does it rerun the autostart installer so `DesktopCommanderTunnel` starts automatically at Windows logon. Autostart prefers Task Scheduler and falls back to the per-user HKCU Run key when Task Scheduler is denied. The headless tunnel runner waits for manager health and reconnects the tunnel if it exits.
+Only after `doctor` succeeds does it rerun the autostart installer. `DesktopCommanderTunnel` is registered as a minute-based Task Scheduler watchdog: it starts the headless runner after login and starts it again if the runner is no longer running. Task Scheduler ignores a new instance while the existing runner is active. If Task Scheduler is denied, the installer falls back to the per-user HKCU Run key, which provides logon startup but not the same watchdog guarantee. The headless tunnel runner waits for manager health and reconnects the tunnel if it exits.
 
 For CLI discovery or manual troubleshooting, use:
 
