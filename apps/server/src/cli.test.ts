@@ -27,7 +27,7 @@ describe('CLI defaults', () => {
     })
   })
 
-  it('builds install, run, and delete specs for the optional secure tunnel task', () => {
+  it('builds a minute watchdog task for the optional secure tunnel', () => {
     const root = resolve('D:/example/dc-manager')
     const api = cli as unknown as {
       createWindowsTunnelAutostartTaskSpec?: (repoRoot: string) => { command: string; args: string[] }
@@ -41,7 +41,7 @@ describe('CLI defaults', () => {
     expect(api.createWindowsTunnelAutostartTaskSpec!(root)).toEqual({
       command,
       args: [
-        '/Create', '/TN', 'DesktopCommanderTunnel', '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F',
+        '/Create', '/TN', 'DesktopCommanderTunnel', '/SC', 'MINUTE', '/MO', '1', '/RL', 'LIMITED', '/F',
         '/TR', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${join(root, 'scripts', 'run-tunnel-headless.ps1')}"`,
       ],
     })

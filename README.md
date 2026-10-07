@@ -95,8 +95,9 @@ Biến `ComSpec` được đặt rõ ràng vì một số terminal/automation en
 - Runner kiểm tra health trước để không tạo instance trùng.
 - Nếu manager crash, runner tự thử khởi động lại tối đa 10 lần, mỗi lần cách 5 giây.
 - Log manager: `data/logs/manager-autostart.log`.
-- Nếu có `tunnel-client`, `DesktopCommanderTunnel` chạy `scripts/run-tunnel-headless.ps1` bằng Task Scheduler hoặc HKCU Run tương tự.
+- Nếu có `tunnel-client`, `DesktopCommanderTunnel` chạy `scripts/run-tunnel-headless.ps1` bằng một Task Scheduler watchdog mỗi phút; nếu Task Scheduler bị từ chối thì mới fallback sang HKCU Run.
 - Tunnel runner chờ manager healthy, kiểm tra profile `desktop-commander-manager`, rồi tự reconnect nếu tunnel process dừng.
+- Watchdog không tạo process trùng: khi runner còn sống, lần kích hoạt kế tiếp bị Task Scheduler bỏ qua; khi runner mất, lần kích hoạt kế tiếp sẽ tự chạy lại runner.
 - Log tunnel: `data/logs/tunnel-autostart.log`.
 - Không có API key/secret nào được ghi vào repo; tunnel dùng credential/environment mà `tunnel-client` đã được cấu hình bên ngoài repo.
 
