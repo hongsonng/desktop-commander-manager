@@ -1,0 +1,20 @@
+{
+    "name":  "desktop-commander-manager-local",
+    "interface":  {
+                      "displayName":  "Desktop Commander Manager Local"
+                  },
+    "plugins":  [
+                    {
+                        "name":  "dev-6ac46cf41b808191bd65413ae75fc70e",
+                        "source":  {
+                                       "source":  "local",
+                                       "path":  "./plugins/desktop-commander-manager"
+                                   },
+                        "policy":  {
+                                       "installation":  "AVAILABLE",
+                                       "authentication":  "ON_INSTALL"
+                                   },
+                        "category":  "Developer Tools"
+                    }
+                ]
+}
