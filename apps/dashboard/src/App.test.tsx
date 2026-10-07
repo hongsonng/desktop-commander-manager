@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import '@testing-library/jest-dom/vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { App } from './App'
 import * as api from './api'
@@ -12,7 +12,11 @@ vi.mock('./api', () => ({
 
 const now = '2026-09-29T00:00:00.000Z'
 
+afterEach(() => cleanup())
+
 beforeEach(() => {
+  window.history.replaceState({}, '', '/')
+  window.localStorage.clear()
   vi.mocked(api.getHealth).mockResolvedValue({ status: 'ok', startedAt: now, uptimeMs: 12345 })
   vi.mocked(api.getConnectionInfo).mockResolvedValue({
     mode: 'direct-local',
@@ -39,32 +43,74 @@ beforeEach(() => {
 })
 
 describe('dashboard', () => {
-  it('renders manager state and executes worker actions with refresh', async () => {
+  it('shows a spinner while the dashboard is refreshing', async () => {
+    let resolveHealth!: (value: Awaited<ReturnType<typeof api.getHealth>>) => void
+    vi.mocked(api.getHealth).mockReturnValueOnce(new Promise((resolve) => { resolveHealth = resolve }))
+
+    render(<App />)
+
+    const refreshingButton = screen.getByRole('button', { name: 'Refreshing dashboard' })
+    expect(refreshingButton).toBeDisabled()
+    expect(refreshingButton).toHaveAttribute('aria-busy', 'true')
+    expect(refreshingButton.querySelector('.refresh-icon.is-spinning')).toBeTruthy()
+
+    resolveHealth({ status: 'ok', startedAt: now, uptimeMs: 12345 })
+    await waitFor(() => {
+      const refreshButton = screen.getByRole('button', { name: 'Refresh dashboard' })
+      expect(refreshButton).toBeEnabled()
+      expect(refreshButton.querySelector('.refresh-icon.is-spinning')).toBeNull()
+    })
+  })
+
+  it('renders the operations workspace and executes worker actions with refresh', async () => {
     const user = userEvent.setup(); render(<App />)
     expect(await screen.findByText('Desktop Commander Manager')).toBeTruthy()
     expect(await screen.findByText('Direct local')).toBeTruthy()
     expect(screen.getByText('http://127.0.0.1:8787/mcp')).toBeTruthy()
-    expect(await screen.findByText('Worker 1')).toBeTruthy()
-    expect(screen.getByText('3 sessions')).toBeTruthy()
-    expect(await screen.findByText('Resource Usage')).toBeTruthy()
-    expect(screen.getByText('180 MB')).toBeTruthy()
-    expect(screen.getByText('Secure MCP Tunnel')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Worker 1' })).toBeTruthy()
+    const workerCard = screen.getByRole('heading', { name: 'Worker 1' }).closest('article')!
+    expect(within(workerCard).getByText('3')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Resource usage' })).toBeTruthy()
+    expect(screen.getAllByText('180 MB')).toHaveLength(2)
+    expect(screen.getAllByText(/Secure MCP Tunnel/).length).toBeGreaterThan(0)
     expect(screen.getByText('18.5%')).toBeTruthy()
-    expect(screen.getAllByText('chat-a')).toHaveLength(2)
-    expect(screen.getByText('SESSION_FAILOVER')).toBeTruthy()
-    expect(await screen.findByText('Live Tool Calls')).toBeTruthy()
-    expect(screen.getByText('read_file')).toBeTruthy()
+    expect(screen.getByText('chat-a')).toBeTruthy()
+    expect(await screen.findByRole('heading', { name: 'Live activity' })).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'View details for read_file' })).toBeTruthy()
     expect(screen.getByText('path=D:/repo/file.txt')).toBeTruthy()
     expect(screen.getByText('12 ms')).toBeTruthy()
+
+    await user.click(screen.getByRole('tab', { name: /Audit events/ }))
+    expect(screen.getByText('SESSION_FAILOVER')).toBeTruthy()
 
     await user.click(screen.getByRole('button', { name: 'Restart Worker 1' }))
     await waitFor(() => expect(api.workerAction).toHaveBeenCalledWith('worker-1', 'restart'))
     expect(vi.mocked(api.getWorkers).mock.calls.length).toBeGreaterThan(1)
   })
 
-  it('shows a recoverable error state when refresh fails', async () => {
+  it('keeps successful data visible when one source fails', async () => {
     vi.mocked(api.getHealth).mockRejectedValueOnce(new Error('network down'))
     render(<App />)
-    expect(await screen.findByRole('alert')).toHaveTextContent('network down')
+    expect(await screen.findByRole('alert')).toHaveTextContent('health: network down')
+    expect(await screen.findByRole('heading', { name: 'Worker 1' })).toBeTruthy()
+    expect(screen.getByRole('status')).toHaveTextContent('PARTIAL')
+  })
+
+  it('filters activity, persists the view in the URL, and opens call details', async () => {
+    const user = userEvent.setup(); render(<App />)
+    expect(await screen.findByRole('button', { name: 'View details for read_file' })).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Write' }))
+    expect(screen.getByText('No calls match these filters')).toBeTruthy()
+    expect(window.location.search).toContain('kind=write')
+
+    await user.click(screen.getByRole('button', { name: 'All' }))
+    await user.click(screen.getByRole('button', { name: 'View details for read_file' }))
+    const dialog = screen.getByRole('dialog', { name: 'read_file' })
+    expect(within(dialog).getByText('path=D:/repo/file.txt')).toBeTruthy()
+    expect(within(dialog).getByText('12 ms')).toBeTruthy()
+
+    await user.click(screen.getByRole('button', { name: 'Close tool call details' }))
+    expect(screen.queryByRole('dialog')).toBeNull()
   })
 })
