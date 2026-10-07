@@ -1,7 +1,7 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
-  "name": "dev-6ac46cf41b808191bd65413ae75fc70e",
-  "version": "1.0.2",
+  "name": "dev-6ac64ed89954819189001c028377dc48",
+  "version": "1.0.1",
   "description": "Desktop Commander Manager connects ChatGPT to local development workflows for files, source code, terminals, processes, Git repositories, builds, and tests.",
   "author": {
     "name": "Nguyễn Hồng Sơn",
@@ -10,14 +10,7 @@
   },
   "homepage": "https://github.com/hongsonng/desktop-commander-manager",
   "repository": "https://github.com/hongsonng/desktop-commander-manager",
-  "keywords": [
-    "desktop",
-    "developer-tools",
-    "files",
-    "terminal",
-    "git",
-    "mcp"
-  ],
+  "keywords": ["desktop", "developer-tools", "files", "terminal", "git", "mcp"],
   "extensions": {
     "com.openai": {
       "apps": "./.app.json",
