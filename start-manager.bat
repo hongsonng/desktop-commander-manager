@@ -6,6 +6,7 @@ rem Luon chay tu thu muc chua file BAT.
 cd /d "%~dp0"
 set "ComSpec=%SystemRoot%\System32\cmd.exe"
 set "COMSPEC=%ComSpec%"
+if exist "%LOCALAPPDATA%\Programs\OpenAI\tunnel-client" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\OpenAI\tunnel-client"
 
 rem Lay ky tu ESC bang PowerShell de tao mau ANSI on dinh tren Windows 10/11.
 for /F "delims=" %%E in ('powershell -NoProfile -Command "[char]27"') do set "ESC=%%E"
