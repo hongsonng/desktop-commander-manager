@@ -46,15 +46,12 @@ if (-not (Test-Path (Join-Path $RepoRoot 'apps\dashboard\dist\index.html'))) {
     exit 5
 }
 
-for ($attempt = 1; $attempt -le 10; $attempt++) {
-    Write-ManagerLog "Starting manager, attempt $attempt/10."
+$attempt = 0
+while ($true) {
+    $attempt++
+    Write-ManagerLog "Starting manager, attempt $attempt."
     & npm.cmd run dev *>> $LogPath
     $exitCode = $LASTEXITCODE
-
-    if ($exitCode -eq 0) {
-        Write-ManagerLog 'Manager exited normally.'
-        exit 0
-    }
 
     if (Test-ManagerHealthy) {
         Write-ManagerLog 'Another healthy manager instance is running; stopping restart loop.'
@@ -64,6 +61,3 @@ for ($attempt = 1; $attempt -le 10; $attempt++) {
     Write-ManagerLog "Manager exited with code $exitCode; retrying in 5 seconds."
     Start-Sleep -Seconds 5
 }
-
-Write-ManagerLog 'Manager exceeded automatic restart limit.'
-exit 6

@@ -17,6 +17,33 @@ function Test-ManagerHealthy {
     }
 }
 
+function Test-ManagerRunnerPresent {
+    try {
+        return $null -ne (Get-CimInstance Win32_Process -Filter "Name = 'powershell.exe'" -ErrorAction Stop |
+            Where-Object { $_.CommandLine -match 'run-manager-headless\.ps1' } |
+            Select-Object -First 1)
+    } catch {
+        Write-TunnelLog "Could not inspect manager runner process: $($_.Exception.Message)"
+        return $false
+    }
+}
+
+function Start-ManagerRunnerIfNeeded {
+    if (Test-ManagerRunnerPresent) {
+        return
+    }
+
+    $bootstrap = Join-Path $PSScriptRoot 'launch-autostart-runner.ps1'
+    $managerRunner = Join-Path $PSScriptRoot 'run-manager-headless.ps1'
+    Write-TunnelLog 'Manager runner is missing; attempting self-heal startup.'
+
+    try {
+        & $bootstrap -Runner $managerRunner *>> $LogPath
+    } catch {
+        Write-TunnelLog "Manager self-heal startup failed: $($_.Exception.Message)"
+    }
+}
+
 $tunnelCommand = Get-Command tunnel-client -ErrorAction SilentlyContinue
 $tunnelExecutable = if ($tunnelCommand) { $tunnelCommand.Source } else { $null }
 
@@ -34,6 +61,7 @@ if (-not $tunnelExecutable) {
 }
 
 while (-not (Test-ManagerHealthy)) {
+    Start-ManagerRunnerIfNeeded
     Write-TunnelLog 'Waiting for Desktop Commander Manager health endpoint.'
     Start-Sleep -Seconds 5
 }

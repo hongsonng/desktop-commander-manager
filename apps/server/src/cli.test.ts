@@ -73,9 +73,10 @@ describe('CLI defaults', () => {
     const runner = join(root, 'scripts', 'run-manager-headless.ps1')
     const reg = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe')
     const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
+    const bootstrap = join(root, 'scripts', 'launch-autostart-runner.ps1')
     expect(api.createWindowsRunKeySetSpec!('DesktopCommanderManager', runner)).toEqual({
       command: reg,
-      args: ['ADD', key, '/V', 'DesktopCommanderManager', '/T', 'REG_SZ', '/D', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${runner}"`, '/F'],
+      args: ['ADD', key, '/V', 'DesktopCommanderManager', '/T', 'REG_SZ', '/D', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${bootstrap}" -Runner "${runner}"`, '/F'],
     })
     expect(api.createWindowsRunKeyQuerySpec!('DesktopCommanderManager')).toEqual({ command: reg, args: ['QUERY', key, '/V', 'DesktopCommanderManager'] })
     expect(api.createWindowsRunKeyDeleteSpec!('DesktopCommanderManager')).toEqual({ command: reg, args: ['DELETE', key, '/V', 'DesktopCommanderManager', '/F'] })

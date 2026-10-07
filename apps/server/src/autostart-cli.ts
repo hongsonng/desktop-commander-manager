@@ -1,8 +1,8 @@
-import { execFile as execFileCallback, spawn } from 'node:child_process'
+import { execFile as execFileCallback } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import {
   WINDOWS_AUTOSTART_TASK_NAME,
   WINDOWS_TUNNEL_TASK_NAME,
@@ -50,13 +50,14 @@ function taskQuerySpec(taskName: string): CommandSpec {
   }
 }
 
-function launchRunner(runner: string): void {
-  const child = spawn('powershell.exe', ['-NoProfile', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', runner], {
-    detached: true,
-    stdio: 'ignore',
-    windowsHide: true,
-  })
-  child.unref()
+async function launchRunner(runner: string): Promise<void> {
+  const powershell = `${process.env.SystemRoot ?? 'C:\\Windows'}\\System32\\WindowsPowerShell\\v1.0\\powershell.exe`
+  const bootstrap = join(dirname(runner), 'launch-autostart-runner.ps1')
+  await execFile(
+    powershell,
+    ['-NoProfile', '-NonInteractive', '-WindowStyle', 'Hidden', '-ExecutionPolicy', 'Bypass', '-File', bootstrap, '-Runner', runner],
+    { windowsHide: true },
+  )
 }
 
 async function installEntry(taskName: string, runner: string, taskSpec: CommandSpec): Promise<Exclude<AutostartMechanism, false>> {
@@ -68,7 +69,7 @@ async function installEntry(taskName: string, runner: string, taskSpec: CommandS
   }
 
   await runSpec(createWindowsRunKeySetSpec(taskName, runner))
-  launchRunner(runner)
+  await launchRunner(runner)
   return 'run-key'
 }
 

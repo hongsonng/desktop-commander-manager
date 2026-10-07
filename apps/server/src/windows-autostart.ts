@@ -1,4 +1,4 @@
-import { join, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 
 export const WINDOWS_AUTOSTART_TASK_NAME = 'DesktopCommanderManager'
 export const WINDOWS_TUNNEL_TASK_NAME = 'DesktopCommanderTunnel'
@@ -48,7 +48,10 @@ function regCommand(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function createWindowsRunKeySetSpec(valueName: string, runner: string, env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
-  const commandLine = `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${runner}"`
+  // Keep the Run-key process short-lived. The bootstrap asks WMI to create the
+  // long-running runner outside the shell/installer process tree.
+  const bootstrap = join(dirname(runner), 'launch-autostart-runner.ps1')
+  const commandLine = `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${bootstrap}" -Runner "${runner}"`
   return {
     command: regCommand(env),
     args: ['ADD', WINDOWS_RUN_KEY, '/V', valueName, '/T', 'REG_SZ', '/D', commandLine, '/F'],
