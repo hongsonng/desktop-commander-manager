@@ -86,8 +86,9 @@ describe('WorkerManager', () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-worker-env-')); roots.push(root)
     const one = buildWorkerEnvironment(join(root, 'worker-1'), {})
     const two = buildWorkerEnvironment(join(root, 'worker-2'), {})
-    for (const key of ['USERPROFILE', 'HOME', 'TEMP', 'TMP'] as const) {
+    for (const key of ['USERPROFILE', 'HOME', 'TEMP', 'TMP', 'PSModuleAnalysisCachePath'] as const) {
       expect(one[key]).toBeTruthy(); expect(two[key]).toBeTruthy(); expect(one[key]).not.toBe(two[key]); expect(resolve(one[key]!)).toBe(one[key])
     }
+    expect(one.PSModuleAnalysisCachePath).toContain(join('temp', 'Microsoft', 'Windows', 'PowerShell', 'ModuleAnalysisCache'))
   })
 })

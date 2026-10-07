@@ -56,7 +56,15 @@ export function buildWorkerEnvironment(runtimeDir: string, baseEnv: NodeJS.Proce
   const root = resolve(runtimeDir)
   const home = resolve(join(root, 'home'))
   const temp = resolve(join(root, 'temp'))
-  return { ...baseEnv, USERPROFILE: home, HOME: home, TEMP: temp, TMP: temp }
+  const psModuleAnalysisCache = resolve(join(temp, 'Microsoft', 'Windows', 'PowerShell', 'ModuleAnalysisCache'))
+  return {
+    ...baseEnv,
+    USERPROFILE: home,
+    HOME: home,
+    TEMP: temp,
+    TMP: temp,
+    PSModuleAnalysisCachePath: psModuleAnalysisCache,
+  }
 }
 
 export function createDesktopCommanderProcessFactory(): DesktopCommanderProcessFactory {
@@ -66,6 +74,7 @@ export function createDesktopCommanderProcessFactory(): DesktopCommanderProcessF
       const logs = join(root, 'logs')
       mkdirSync(join(root, 'home'), { recursive: true })
       mkdirSync(join(root, 'temp'), { recursive: true })
+      mkdirSync(join(root, 'temp', 'Microsoft', 'Windows', 'PowerShell'), { recursive: true })
       mkdirSync(logs, { recursive: true })
 
       const spawnSpec = desktopCommanderSpawnSpec(process.platform, process.env)

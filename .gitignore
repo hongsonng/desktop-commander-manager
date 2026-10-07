@@ -5,3 +5,7 @@ dist/
 data/*.db*
 data/workers/
 logs/
+
+# Windows PowerShell may create its module-analysis cache relative to cwd when
+# launched from an isolated worker environment. Keep this generated cache out of Git.
+/Microsoft/Windows/PowerShell/
