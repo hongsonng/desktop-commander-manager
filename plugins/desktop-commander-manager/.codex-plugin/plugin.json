@@ -1,0 +1,35 @@
+{
+  "name": "dev-6ac64ed89954819189001c028377dc48",
+  "version": "1.0.1",
+  "description": "Desktop Commander Manager connects ChatGPT to local development workflows for files, source code, terminals, processes, Git repositories, builds, and tests.",
+  "author": {
+    "name": "Nguyễn Hồng Sơn",
+    "email": "nhson.codes@gmail.com",
+    "url": "https://github.com/hongsonng"
+  },
+  "apps": "./.app.json",
+  "interface": {
+    "displayName": "Desktop Commander Manager",
+    "shortDescription": "Local developer tools",
+    "longDescription": "Connect ChatGPT to Desktop Commander Manager to work with local files, source code, terminals, processes, Git repositories, builds, tests, and Windows development workflows through controlled Desktop Commander workers.",
+    "developerName": "Nguyễn Hồng Sơn",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Read and edit local files",
+      "Run terminal commands",
+      "Inspect and modify source code",
+      "Work with Git repositories",
+      "Run builds and tests",
+      "Inspect local processes"
+    ],
+    "websiteURL": "https://github.com/hongsonng/desktop-commander-manager",
+    "supportURL": "https://github.com/hongsonng/desktop-commander-manager/issues",
+    "defaultPrompt": [
+      "Check the current Git status of my project.",
+      "Inspect this repository and run its tests.",
+      "Find the cause of this local development error."
+    ],
+    "composerIcon": "./assets/icon.png",
+    "logo": "./assets/logo.png"
+  }
+}

@@ -1,8 +1,8 @@
 {
-    "apps":  {
-                 "dev-6ac46cf41b808191bd65413ae75fc70e":  {
-                                                              "id":  "asdk_app_6ac46cf41b808191bd65413ae75fc70e",
-                                                              "required":  true
-                                                          }
-             }
+  "apps": {
+    "dev-6ac64ed89954819189001c028377dc48": {
+      "id": "asdk_app_6ac64ed89954819189001c028377dc48",
+      "required": true
+    }
+  }
 }
