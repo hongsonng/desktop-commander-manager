@@ -14,15 +14,15 @@ describe('CLI defaults', () => {
     })
   })
 
-  it('builds a Windows logon task that runs the manager headlessly from this repository', () => {
+  it('builds a minute watchdog task that runs the manager headlessly from this repository', () => {
     const root = resolve('D:/example/dc-manager')
     const createSpec = (cli as unknown as { createWindowsAutostartTaskSpec?: (repoRoot: string) => { command: string; args: string[] } }).createWindowsAutostartTaskSpec
     expect(createSpec).toBeTypeOf('function')
     expect(createSpec!(root)).toEqual({
       command: join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'schtasks.exe'),
       args: [
-        '/Create', '/TN', 'DesktopCommanderManager', '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F',
-        '/TR', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${join(root, 'scripts', 'run-manager-headless.ps1')}"`,
+        '/Create', '/TN', 'DesktopCommanderManager', '/SC', 'MINUTE', '/MO', '1', '/RL', 'LIMITED', '/F',
+        '/TR', `"${join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'wscript.exe')}" //B //Nologo "${join(root, 'scripts', 'run-headless.vbs')}" "${join(root, 'scripts', 'run-manager-headless.ps1')}"`,
       ],
     })
   })
@@ -42,7 +42,7 @@ describe('CLI defaults', () => {
       command,
       args: [
         '/Create', '/TN', 'DesktopCommanderTunnel', '/SC', 'MINUTE', '/MO', '1', '/RL', 'LIMITED', '/F',
-        '/TR', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${join(root, 'scripts', 'run-tunnel-headless.ps1')}"`,
+        '/TR', `"${join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'wscript.exe')}" //B //Nologo "${join(root, 'scripts', 'run-headless.vbs')}" "${join(root, 'scripts', 'run-tunnel-headless.ps1')}"`,
       ],
     })
     expect(api.createWindowsAutostartRunSpec!('DesktopCommanderManager')).toEqual({ command, args: ['/Run', '/TN', 'DesktopCommanderManager'] })
@@ -73,10 +73,11 @@ describe('CLI defaults', () => {
     const runner = join(root, 'scripts', 'run-manager-headless.ps1')
     const reg = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'reg.exe')
     const key = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run'
-    const bootstrap = join(root, 'scripts', 'launch-autostart-runner.ps1')
+    const launcher = join(root, 'scripts', 'run-headless.vbs')
+    const scriptHost = join(process.env.SystemRoot ?? 'C:\\Windows', 'System32', 'wscript.exe')
     expect(api.createWindowsRunKeySetSpec!('DesktopCommanderManager', runner)).toEqual({
       command: reg,
-      args: ['ADD', key, '/V', 'DesktopCommanderManager', '/T', 'REG_SZ', '/D', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${bootstrap}" -Runner "${runner}"`, '/F'],
+      args: ['ADD', key, '/V', 'DesktopCommanderManager', '/T', 'REG_SZ', '/D', `"${scriptHost}" //B //Nologo "${launcher}" "${runner}"`, '/F'],
     })
     expect(api.createWindowsRunKeyQuerySpec!('DesktopCommanderManager')).toEqual({ command: reg, args: ['QUERY', key, '/V', 'DesktopCommanderManager'] })
     expect(api.createWindowsRunKeyDeleteSpec!('DesktopCommanderManager')).toEqual({ command: reg, args: ['DELETE', key, '/V', 'DesktopCommanderManager', '/F'] })
