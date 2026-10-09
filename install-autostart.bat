@@ -4,6 +4,7 @@ setlocal EnableExtensions EnableDelayedExpansion
 cd /d "%~dp0"
 set "ComSpec=%SystemRoot%\System32\cmd.exe"
 set "COMSPEC=%ComSpec%"
+if exist "%LOCALAPPDATA%\Programs\OpenAI\tunnel-client" set "PATH=%PATH%;%LOCALAPPDATA%\Programs\OpenAI\tunnel-client"
 for /F "delims=" %%E in ('powershell -NoProfile -Command "[char]27"') do set "ESC=%%E"
 set "RESET=!ESC![0m"
 set "BOLD=!ESC![1m"

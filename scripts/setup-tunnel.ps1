@@ -22,18 +22,60 @@ function Test-ManagerHealthy {
     }
 }
 
-Write-Step 'Checking tunnel-client...'
-$tunnelCommand = Get-Command tunnel-client -ErrorAction SilentlyContinue
-if (-not $tunnelCommand) {
-    $candidate = Join-Path $env:LOCALAPPDATA 'Programs\OpenAI\tunnel-client\tunnel-client.exe'
-    if (Test-Path $candidate) {
-        $tunnelCommand = Get-Item $candidate
-        $env:Path = "$env:Path;$(Split-Path -Parent $candidate)"
+function Ensure-TunnelClient {
+    Write-Step 'Checking tunnel-client...'
+    $cmd = Get-Command tunnel-client -ErrorAction SilentlyContinue
+    if ($cmd) {
+        return $cmd
     }
+
+    $candidateDir = Join-Path $env:LOCALAPPDATA 'Programs\OpenAI\tunnel-client'
+    $candidate = Join-Path $candidateDir 'tunnel-client.exe'
+    if (Test-Path $candidate) {
+        $env:Path = "$env:Path;$candidateDir"
+        return (Get-Item $candidate)
+    }
+
+    Write-Host 'tunnel-client is not installed. Attempting automatic download from OpenAI...' -ForegroundColor Cyan
+    try {
+        New-Item -ItemType Directory -Force -Path $candidateDir | Out-Null
+        $zipFile = Join-Path $env:TEMP "tunnel-client-windows-$PID.zip"
+
+        $downloadUrl = $null
+        try {
+            $latest = Invoke-RestMethod -Uri 'https://api.github.com/repos/openai/tunnel-client/releases/latest' -TimeoutSec 10 -UseBasicParsing
+            $asset = $latest.assets | Where-Object { $_.name -like 'tunnel-client-*-windows-amd64.zip' -and $_.name -notlike '*runtime*' } | Select-Object -First 1
+            if ($asset -and $asset.browser_download_url) {
+                $downloadUrl = $asset.browser_download_url
+            }
+        } catch {
+            # Fallback if GitHub API is unreachable or rate limited
+        }
+
+        if (-not $downloadUrl) {
+            $downloadUrl = 'https://github.com/openai/tunnel-client/releases/download/v0.0.16/tunnel-client-v0.0.16-windows-amd64.zip'
+        }
+
+        Write-Host "Downloading $downloadUrl..." -ForegroundColor Cyan
+        Invoke-WebRequest -Uri $downloadUrl -OutFile $zipFile -UseBasicParsing
+
+        Write-Host "Extracting to $candidateDir..." -ForegroundColor Cyan
+        Expand-Archive -Path $zipFile -DestinationPath $candidateDir -Force
+        Remove-Item $zipFile -Force -ErrorAction SilentlyContinue
+
+        if (Test-Path $candidate) {
+            $env:Path = "$env:Path;$candidateDir"
+            Write-Host 'tunnel-client installed successfully.' -ForegroundColor Green
+            return (Get-Item $candidate)
+        }
+    } catch {
+        Write-Warning "Automatic download failed: $($_.Exception.Message)"
+    }
+
+    throw 'tunnel-client is not installed and could not be downloaded automatically. Install the official OpenAI tunnel-client first.'
 }
-if (-not $tunnelCommand) {
-    throw 'tunnel-client is not installed. Install the official OpenAI tunnel-client first.'
-}
+
+$tunnelCommand = Ensure-TunnelClient
 
 if (-not $TunnelId) {
     Write-Host 'Create or inspect the tunnel here:' -ForegroundColor Yellow

@@ -32,7 +32,16 @@ export function createWindowsAutostartTaskSpec(root = process.cwd(), env: NodeJS
 
 export function createWindowsTunnelAutostartTaskSpec(root = process.cwd(), env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
   const repoRoot = resolve(root)
-  return createWindowsLogonTaskSpec(WINDOWS_TUNNEL_TASK_NAME, join(repoRoot, 'scripts', 'run-tunnel-headless.ps1'), env)
+  // A minute schedule acts as a watchdog. Task Scheduler's default IgnoreNew
+  // policy keeps the long-running runner single-instance while recovering it
+  // after an unexpected process termination.
+  return {
+    command: schtasksCommand(env),
+    args: [
+      '/Create', '/TN', WINDOWS_TUNNEL_TASK_NAME, '/SC', 'MINUTE', '/MO', '1', '/RL', 'LIMITED', '/F',
+      '/TR', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${join(repoRoot, 'scripts', 'run-tunnel-headless.ps1')}"`,
+    ],
+  }
 }
 
 export function createWindowsAutostartRunSpec(taskName: string, env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
