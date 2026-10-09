@@ -15,33 +15,34 @@ function schtasksCommand(env: NodeJS.ProcessEnv = process.env): string {
   return join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'schtasks.exe')
 }
 
-function createWindowsLogonTaskSpec(taskName: string, runner: string, env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
+function hiddenRunnerCommand(runner: string, env: NodeJS.ProcessEnv = process.env): string {
+  const scriptHost = join(env.SystemRoot ?? 'C:\\Windows', 'System32', 'wscript.exe')
+  const launcher = join(dirname(runner), 'run-headless.vbs')
+  // wscript is a GUI host: no console/Windows Terminal is allocated at login.
+  return `"${scriptHost}" //B //Nologo "${launcher}" "${runner}"`
+}
+
+function createWindowsWatchdogTaskSpec(taskName: string, runner: string, env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
+  // A minute schedule acts as a watchdog. Task Scheduler's default IgnoreNew
+  // policy keeps the long-running runner single-instance while recovering it
+  // after an unexpected process-tree termination.
   return {
     command: schtasksCommand(env),
     args: [
-      '/Create', '/TN', taskName, '/SC', 'ONLOGON', '/RL', 'LIMITED', '/F',
-      '/TR', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${runner}"`,
+      '/Create', '/TN', taskName, '/SC', 'MINUTE', '/MO', '1', '/RL', 'LIMITED', '/F',
+      '/TR', hiddenRunnerCommand(runner, env),
     ],
   }
 }
 
 export function createWindowsAutostartTaskSpec(root = process.cwd(), env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
   const repoRoot = resolve(root)
-  return createWindowsLogonTaskSpec(WINDOWS_AUTOSTART_TASK_NAME, join(repoRoot, 'scripts', 'run-manager-headless.ps1'), env)
+  return createWindowsWatchdogTaskSpec(WINDOWS_AUTOSTART_TASK_NAME, join(repoRoot, 'scripts', 'run-manager-headless.ps1'), env)
 }
 
 export function createWindowsTunnelAutostartTaskSpec(root = process.cwd(), env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
   const repoRoot = resolve(root)
-  // A minute schedule acts as a watchdog. Task Scheduler's default IgnoreNew
-  // policy keeps the long-running runner single-instance while recovering it
-  // after an unexpected process termination.
-  return {
-    command: schtasksCommand(env),
-    args: [
-      '/Create', '/TN', WINDOWS_TUNNEL_TASK_NAME, '/SC', 'MINUTE', '/MO', '1', '/RL', 'LIMITED', '/F',
-      '/TR', `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${join(repoRoot, 'scripts', 'run-tunnel-headless.ps1')}"`,
-    ],
-  }
+  return createWindowsWatchdogTaskSpec(WINDOWS_TUNNEL_TASK_NAME, join(repoRoot, 'scripts', 'run-tunnel-headless.ps1'), env)
 }
 
 export function createWindowsAutostartRunSpec(taskName: string, env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
@@ -57,10 +58,9 @@ function regCommand(env: NodeJS.ProcessEnv = process.env): string {
 }
 
 export function createWindowsRunKeySetSpec(valueName: string, runner: string, env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } {
-  // Keep the Run-key process short-lived. The bootstrap asks WMI to create the
-  // long-running runner outside the shell/installer process tree.
-  const bootstrap = join(dirname(runner), 'launch-autostart-runner.ps1')
-  const commandLine = `powershell.exe -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File "${bootstrap}" -Runner "${runner}"`
+  // Use the same console-free launcher if Task Scheduler cannot be used.
+  // The script host waits on the runner to avoid orphaned terminals.
+  const commandLine = hiddenRunnerCommand(runner, env)
   return {
     command: regCommand(env),
     args: ['ADD', WINDOWS_RUN_KEY, '/V', valueName, '/T', 'REG_SZ', '/D', commandLine, '/F'],
