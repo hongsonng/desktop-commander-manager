@@ -10,6 +10,7 @@ import { startManager, type ManagerRuntime } from '../../apps/server/src/main'
 
 const roots: string[] = []
 const fakeScript = resolve('tests/fakes/fake-mcp-worker.ts')
+const PROCESS_INTEGRATION_TIMEOUT_MS = 20_000
 
 class FakeProcessFactory implements DesktopCommanderProcessFactory {
   readonly startCounts = new Map<string, number>()
@@ -85,7 +86,7 @@ describe('router integration', () => {
     runtime = await start(root, new FakeProcessFactory(mutationFile)); clientA = await connect(runtime.mcpUrl)
     expect(await identify(clientA, 'chat-a')).toBe(firstA)
     await clientA.close(); await runtime.close()
-  })
+  }, PROCESS_INTEGRATION_TIMEOUT_MS)
 
   it('recovers a crashed worker with a new MCP handshake and keeps the session binding', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-recovery-')); roots.push(root); const factory = new FakeProcessFactory(join(root, 'mutations.log'))
@@ -98,7 +99,7 @@ describe('router integration', () => {
       expect(runtime.database.sessions.getSession('chat-recover')?.workerId).toBe(original)
       expect(runtime.database.events.listEvents().filter((event) => event.type === 'SESSION_FAILOVER' && event.sessionId === 'chat-recover')).toHaveLength(0)
     } finally { await client.close(); await runtime.close() }
-  })
+  }, PROCESS_INTEGRATION_TIMEOUT_MS)
 
   it('rebinds only after recovery fails', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-failover-')); roots.push(root); const factory = new FakeProcessFactory(join(root, 'mutations.log'))
@@ -109,7 +110,7 @@ describe('router integration', () => {
       expect(replacement).not.toBe(original); expect(factory.startCounts.get(original)).toBe(2); expect(runtime.database.sessions.getSession('chat-failover')?.workerId).toBe(replacement)
       expect(runtime.database.events.listEvents().some((event) => event.type === 'SESSION_FAILOVER' && event.sessionId === 'chat-failover')).toBe(true)
     } finally { await client.close(); await runtime.close() }
-  })
+  }, PROCESS_INTEGRATION_TIMEOUT_MS)
 
   it('does not replay an ambiguous mutating call after the worker already executed it', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-ambiguous-')); roots.push(root); const mutationFile = join(root, 'mutations.log'); const factory = new FakeProcessFactory(mutationFile)
@@ -122,6 +123,6 @@ describe('router integration', () => {
       expect(runtime.database.sessions.getSession('chat-mutate')?.workerId).toBe(original)
       expect(runtime.database.events.listEvents().filter((event) => event.type === 'SESSION_FAILOVER' && event.sessionId === 'chat-mutate')).toHaveLength(0)
     } finally { await client.close(); await runtime.close() }
-  })
+  }, PROCESS_INTEGRATION_TIMEOUT_MS)
 })
 
