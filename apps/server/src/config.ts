@@ -9,6 +9,7 @@ export interface ManagerConfig {
   managementPort?: number
   dashboardDir?: string
   platformOwner?: CapabilityOwner
+  workerOwner?: CapabilityOwner
   nativeSidecarPath?: string
 }
 

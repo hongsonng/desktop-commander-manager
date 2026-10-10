@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -19,6 +20,24 @@ pub enum SidecarRequest {
 
     #[serde(rename = "process/killTree")]
     KillProcessTree(KillProcessTreeRequest),
+
+    #[serde(rename = "worker/start")]
+    WorkerStart(WorkerStartRequest),
+
+    #[serde(rename = "worker/stop")]
+    WorkerStop(WorkerStopRequest),
+
+    #[serde(rename = "worker/restart")]
+    WorkerRestart(WorkerRestartRequest),
+
+    #[serde(rename = "worker/listTools")]
+    WorkerListTools(WorkerListToolsRequest),
+
+    #[serde(rename = "worker/callTool")]
+    WorkerCallTool(WorkerCallToolRequest),
+
+    #[serde(rename = "worker/shutdownAll")]
+    WorkerShutdownAll(WorkerShutdownAllRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -43,6 +62,58 @@ pub struct KillProcessTreeRequest {
     pub expected_creation_time_100ns: Option<u64>,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerStartRequest {
+    pub worker_id: String,
+    pub runtime_dir: String,
+    pub command: String,
+    pub args: Vec<String>,
+    #[serde(default)]
+    pub env: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerStopRequest {
+    pub worker_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerRestartRequest {
+    pub worker_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerListToolsRequest {
+    pub worker_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerCallToolRequest {
+    pub worker_id: String,
+    pub name: String,
+    pub arguments: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerShutdownAllRequest {}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(untagged)]
+pub enum SidecarMessage {
+    Reply(SidecarReply),
+    Event(SidecarEventEnvelope),
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SidecarReply {
@@ -54,11 +125,70 @@ pub struct SidecarReply {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "event", content = "params", rename_all = "camelCase")]
+pub enum SidecarEventEnvelope {
+    #[serde(rename = "worker/stateChanged")]
+    WorkerStateChanged(WorkerStateEvent),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerStateEvent {
+    pub worker_id: String,
+    pub state: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pid: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exit_code: Option<i32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signal: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum SidecarResult {
     Snapshot(ProcessSnapshotResult),
     Identity(Option<ProcessIdentity>),
     KillTree(KillTreeResult),
+    WorkerHandle(WorkerHandleResult),
+    ListTools(WorkerListToolsResult),
+    CallTool(WorkerCallToolResult),
+    Empty(serde_json::Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerHandleResult {
+    pub worker_id: String,
+    pub pid: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerListToolsResult {
+    pub tools: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WorkerCallToolResult {
+    pub content: Vec<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub is_error: Option<bool>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UpstreamFailureKind {
+    #[serde(rename = "PRE_DISPATCH")]
+    PreDispatch,
+    #[serde(rename = "ACK_UNKNOWN")]
+    AckUnknown,
+    #[serde(rename = "UPSTREAM_ERROR")]
+    UpstreamError,
+    #[serde(rename = "POST_DISPATCH")]
+    PostDispatch,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -66,6 +196,30 @@ pub enum SidecarResult {
 pub struct SidecarError {
     pub code: String,
     pub message: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure_kind: Option<UpstreamFailureKind>,
+}
+
+impl SidecarError {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            failure_kind: None,
+        }
+    }
+
+    pub fn with_failure_kind(
+        code: impl Into<String>,
+        message: impl Into<String>,
+        failure_kind: UpstreamFailureKind,
+    ) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            failure_kind: Some(failure_kind),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

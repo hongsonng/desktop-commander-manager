@@ -33,3 +33,7 @@ pub trait ProcessPlatform: Send + Sync {
     fn identity(&self, pid: u32) -> Result<Option<ProcessIdentity>, PlatformError>;
     fn kill_tree(&self, request: &KillProcessTreeRequest) -> Result<KillTreeResult, PlatformError>;
 }
+
+pub trait SupervisorOwnershipGuard: Send + Sync {
+    fn is_held(&self) -> bool;
+}

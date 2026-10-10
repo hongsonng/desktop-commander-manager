@@ -1,5 +1,7 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
+import { UpstreamCallError } from '@dc-manager/router'
+import type { ProxyWorkerClient, WorkerToolResult, WorkerToolsResult } from '@dc-manager/mcp-proxy'
 
 export type CapabilityOwner = 'node' | 'rust' | 'shadow'
 
@@ -52,6 +54,57 @@ export interface RawSnapshot {
   workers: RawUsage[]
 }
 
+export interface WorkerStartRequest {
+  workerId: string
+  runtimeDir: string
+  command: string
+  args: string[]
+  env?: Record<string, string>
+}
+
+export interface WorkerStopRequest {
+  workerId: string
+}
+
+export interface WorkerRestartRequest {
+  workerId: string
+}
+
+export interface WorkerListToolsRequest {
+  workerId: string
+  meta?: Record<string, unknown>
+}
+
+export interface WorkerCallToolRequest {
+  workerId: string
+  name: string
+  arguments: Record<string, unknown>
+  meta?: Record<string, unknown>
+}
+
+export interface WorkerHandleResult {
+  workerId: string
+  pid: number
+}
+
+export interface WorkerListToolsResult {
+  tools: Array<Record<string, unknown>>
+}
+
+export interface WorkerCallToolResult {
+  content: Array<Record<string, unknown>>
+  isError?: boolean
+}
+
+export interface WorkerStateEvent {
+  workerId: string
+  state: string
+  pid?: number
+  reason?: string
+  exitCode?: number
+  signal?: string
+}
+
 interface PendingRequest {
   resolve: (value: any) => void
   reject: (error: Error) => void
@@ -62,6 +115,7 @@ export class NativeSidecarClient {
   private nextId = 1
   private pending = new Map<number, PendingRequest>()
   private isClosed = false
+  private workerStateListeners = new Set<(event: WorkerStateEvent) => void>()
 
   private constructor(child: ChildProcess) {
     this.child = child
@@ -89,10 +143,14 @@ export class NativeSidecarClient {
     })
   }
 
-  static async start(executablePath: string): Promise<NativeSidecarClient> {
+  static async start(
+    executablePath: string,
+    env?: NodeJS.ProcessEnv,
+  ): Promise<NativeSidecarClient> {
     const child = spawn(executablePath, ['sidecar'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
+      env: env ? { ...process.env, ...env } : process.env,
     })
 
     return new Promise((resolve, reject) => {
@@ -119,6 +177,13 @@ export class NativeSidecarClient {
     })
   }
 
+  onWorkerStateChanged(handler: (event: WorkerStateEvent) => void): () => void {
+    this.workerStateListeners.add(handler)
+    return () => {
+      this.workerStateListeners.delete(handler)
+    }
+  }
+
   private handleLine(line: string): void {
     const trimmed = line.trim()
     if (!trimmed) return
@@ -126,8 +191,21 @@ export class NativeSidecarClient {
     let msg: any
     try {
       msg = JSON.parse(trimmed)
-    } catch (parseError) {
+    } catch {
       // Protocol desynchronization or corrupted stdout
+      return
+    }
+
+    if (msg.event && msg.params) {
+      if (msg.event === 'worker/stateChanged') {
+        for (const listener of this.workerStateListeners) {
+          try {
+            listener(msg.params)
+          } catch {
+            // Ignore listener exceptions
+          }
+        }
+      }
       return
     }
 
@@ -139,7 +217,13 @@ export class NativeSidecarClient {
     this.pending.delete(id)
 
     if (msg.error) {
-      pending.reject(new Error(`Sidecar error [${msg.error.code}]: ${msg.error.message}`))
+      const failureKind = msg.error.failureKind ?? 'UPSTREAM_ERROR'
+      pending.reject(
+        new UpstreamCallError(
+          failureKind,
+          `Sidecar error [${msg.error.code}]: ${msg.error.message}`,
+        ),
+      )
     } else {
       pending.resolve(msg.result)
     }
@@ -194,6 +278,30 @@ export class NativeSidecarClient {
     return this.request<KillTreeResult>('process/killTree', request)
   }
 
+  async workerStart(request: WorkerStartRequest): Promise<WorkerHandleResult> {
+    return this.request<WorkerHandleResult>('worker/start', request)
+  }
+
+  async workerStop(request: WorkerStopRequest): Promise<WorkerHandleResult> {
+    return this.request<WorkerHandleResult>('worker/stop', request)
+  }
+
+  async workerRestart(request: WorkerRestartRequest): Promise<WorkerHandleResult> {
+    return this.request<WorkerHandleResult>('worker/restart', request)
+  }
+
+  async workerListTools(request: WorkerListToolsRequest): Promise<WorkerListToolsResult> {
+    return this.request<WorkerListToolsResult>('worker/listTools', request)
+  }
+
+  async workerCallTool(request: WorkerCallToolRequest): Promise<WorkerCallToolResult> {
+    return this.request<WorkerCallToolResult>('worker/callTool', request)
+  }
+
+  async workerShutdownAll(): Promise<void> {
+    return this.request<void>('worker/shutdownAll', {})
+  }
+
   async close(): Promise<void> {
     if (this.isClosed) return
     this.isClosed = true
@@ -225,5 +333,41 @@ export class NativeSidecarClient {
         clearTimeout(timer)
       })
     })
+  }
+}
+
+export class NativeSidecarWorkerClient implements ProxyWorkerClient {
+  constructor(
+    private readonly sidecar: NativeSidecarClient,
+    private readonly workerId: string,
+  ) {}
+
+  async listTools(meta?: Record<string, unknown>): Promise<WorkerToolsResult> {
+    const res = await this.sidecar.workerListTools({
+      workerId: this.workerId,
+      meta,
+    })
+    return { tools: res.tools as any }
+  }
+
+  async callTool(
+    name: string,
+    args: Record<string, unknown>,
+    meta?: Record<string, unknown>,
+  ): Promise<WorkerToolResult> {
+    const res = await this.sidecar.workerCallTool({
+      workerId: this.workerId,
+      name,
+      arguments: args,
+      meta,
+    })
+    return {
+      content: res.content as any,
+      isError: res.isError ?? false,
+    }
+  }
+
+  async close(): Promise<void> {
+    // Lifetime managed by sidecar supervisor
   }
 }

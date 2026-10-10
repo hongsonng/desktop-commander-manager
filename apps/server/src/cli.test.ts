@@ -12,17 +12,20 @@ describe('CLI defaults', () => {
       mcpPort: 8787,
       managementPort: 8788,
       platformOwner: 'rust',
+      workerOwner: 'node',
       nativeSidecarPath: join(root, 'target', 'release', 'dcm-manager.exe'),
     })
   })
 
-  it('parses platform owner from environment and validates values', () => {
+  it('parses platform owner and worker owner from environment and validates values', () => {
     expect(cli.parseCapabilityOwner(undefined)).toBe('rust')
+    expect(cli.parseCapabilityOwner(undefined, 'node', 'DCM_WORKER_OWNER')).toBe('node')
     expect(cli.parseCapabilityOwner('node')).toBe('node')
     expect(cli.parseCapabilityOwner('rust')).toBe('rust')
     expect(cli.parseCapabilityOwner('shadow')).toBe('shadow')
     expect(cli.parseCapabilityOwner('  SHADOW  ')).toBe('shadow')
     expect(() => cli.parseCapabilityOwner('invalid')).toThrow(/Invalid DCM_PLATFORM_OWNER/i)
+    expect(() => cli.parseCapabilityOwner('bad', 'node', 'DCM_WORKER_OWNER')).toThrow(/Invalid DCM_WORKER_OWNER/i)
   })
 
   it('uses custom DCM_NATIVE_SIDECAR_PATH when set', () => {

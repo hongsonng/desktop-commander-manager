@@ -17,18 +17,23 @@ export {
   createWindowsRunKeySetSpec,
 } from './windows-autostart.js'
 
-export function parseCapabilityOwner(value: string | undefined): CapabilityOwner {
-  if (!value) return 'rust'
+export function parseCapabilityOwner(
+  value: string | undefined,
+  defaultValue: CapabilityOwner = 'rust',
+  varName = 'DCM_PLATFORM_OWNER',
+): CapabilityOwner {
+  if (!value) return defaultValue
   const normalized = value.trim().toLowerCase()
   if (normalized === 'node' || normalized === 'rust' || normalized === 'shadow') {
     return normalized
   }
-  throw new Error(`Invalid DCM_PLATFORM_OWNER "${value}". Valid options are: node, rust, shadow.`)
+  throw new Error(`Invalid ${varName} "${value}". Valid options are: node, rust, shadow.`)
 }
 
 export function createDefaultManagerConfig(root = process.cwd(), env = process.env): ManagerConfig {
   const repoRoot = resolve(root)
-  const platformOwner = parseCapabilityOwner(env.DCM_PLATFORM_OWNER)
+  const platformOwner = parseCapabilityOwner(env.DCM_PLATFORM_OWNER, 'rust', 'DCM_PLATFORM_OWNER')
+  const workerOwner = parseCapabilityOwner(env.DCM_WORKER_OWNER, 'node', 'DCM_WORKER_OWNER')
   const nativeSidecarPath = env.DCM_NATIVE_SIDECAR_PATH ?? join(repoRoot, 'target', 'release', 'dcm-manager.exe')
 
   return {
@@ -38,6 +43,7 @@ export function createDefaultManagerConfig(root = process.cwd(), env = process.e
     mcpPort: 8787,
     managementPort: 8788,
     platformOwner,
+    workerOwner,
     nativeSidecarPath,
   }
 }

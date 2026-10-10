@@ -27,6 +27,7 @@ dependencies = [
  "manager-platform",
  "manager-protocol",
  "manager-windows",
+ "manager-worker",
  "serde",
  "serde_json",
  "tokio",
@@ -90,6 +91,18 @@ dependencies = [
  "serde_json",
  "thiserror",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "manager-worker"
+version = "0.1.0"
+dependencies = [
+ "manager-platform",
+ "manager-protocol",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tokio",
 ]
 
 [[package]]
