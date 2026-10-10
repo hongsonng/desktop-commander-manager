@@ -242,7 +242,8 @@ impl WorkerSupervisor {
         let client_monitor = Arc::clone(&client);
         tokio::spawn(async move {
             let exit_code = client_monitor.wait_for_exit().await;
-            this.on_worker_exit(&worker_id_clone, exit_code).await;
+            this.on_worker_exit(&worker_id_clone, &client_monitor, exit_code)
+                .await;
         });
 
         // Perform MCP Handshake
@@ -416,10 +417,19 @@ impl WorkerSupervisor {
         Ok(())
     }
 
-    async fn on_worker_exit(&self, id: &str, exit_code: Option<i32>) {
+    async fn on_worker_exit(
+        &self,
+        id: &str,
+        exited_client: &Arc<WorkerClient>,
+        exit_code: Option<i32>,
+    ) {
         let mut workers = self.workers.lock().await;
         if let Some(worker) = workers.get_mut(id) {
-            if worker.intentional_stop {
+            let is_current_client = worker
+                .client
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, exited_client));
+            if worker.intentional_stop || !is_current_client {
                 return;
             }
 

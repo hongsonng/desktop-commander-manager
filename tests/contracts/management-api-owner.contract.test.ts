@@ -8,6 +8,8 @@ import { normalizeContractValue } from './normalize.js'
 const roots: string[] = []
 
 afterEach(() => {
+  delete process.env.DCM_WORKER_COMMAND
+  delete process.env.DCM_WORKER_ARGS
   for (const root of roots.splice(0)) {
     if (existsSync(root)) {
       rmSync(root, { recursive: true, force: true })
@@ -19,6 +21,7 @@ describe('management-api-owner contract parity', () => {
   const releaseExe = resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
   const debugExe = resolve(process.cwd(), 'target', 'debug', 'dcm-manager.exe')
   const exePath = existsSync(releaseExe) ? releaseExe : debugExe
+  const fakeWorker = resolve(process.cwd(), 'tests', 'fakes', 'fake-mcp-worker.mjs')
 
   const owners = ['node', 'rust'] as const
 
@@ -34,6 +37,8 @@ describe('management-api-owner contract parity', () => {
 
           const root = mkdtempSync(join(tmpdir(), `dcm-api-contract-${managementApiOwner}-`))
           roots.push(root)
+          process.env.DCM_WORKER_COMMAND = process.execPath
+          process.env.DCM_WORKER_ARGS = JSON.stringify([fakeWorker])
 
           const dashboardDir = join(root, 'dist')
           mkdirSync(join(dashboardDir, 'assets'), { recursive: true })
@@ -168,7 +173,8 @@ describe('management-api-owner contract parity', () => {
             const restartRes = await fetch(`${runtime.managementUrl}/api/workers/worker-1/restart`, {
               method: 'POST',
             })
-            expect(restartRes.status).toBe(200)
+            const restartError = restartRes.ok ? '' : await restartRes.clone().text()
+            expect(restartRes.status, restartError).toBe(200)
             const restartJson = await restartRes.json() as any
             expect(restartJson.id).toBe('worker-1')
             expect(restartJson.status).toBe('READY')

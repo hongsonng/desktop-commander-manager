@@ -9,6 +9,8 @@ import { startManager, type ManagerRuntime } from "../../apps/server/src/main.js
 const roots: string[] = [];
 
 afterEach(() => {
+  delete process.env.DCM_WORKER_COMMAND;
+  delete process.env.DCM_WORKER_ARGS;
   for (const root of roots) {
     if (existsSync(root)) {
       rmSync(root, { recursive: true, force: true });
@@ -28,6 +30,7 @@ describe("Rust Worker Supervisor Recovery Gate", () => {
   const releaseExe = resolve(process.cwd(), "target", "release", "dcm-manager.exe");
   const debugExe = resolve(process.cwd(), "target", "debug", "dcm-manager.exe");
   const exePath = existsSync(releaseExe) ? releaseExe : debugExe;
+  const fakeWorker = resolve(process.cwd(), "tests", "fakes", "fake-mcp-worker.mjs");
 
   it(
     "supervises workers via Rust, detects crash, and recovers to READY within 5s",
@@ -41,6 +44,8 @@ describe("Rust Worker Supervisor Recovery Gate", () => {
       roots.push(root);
 
       process.env.DCM_SUPERVISOR_MUTEX_NAME = `Local\\DesktopCommanderManager.TestRecovery.${process.pid}`;
+      process.env.DCM_WORKER_COMMAND = process.execPath;
+      process.env.DCM_WORKER_ARGS = JSON.stringify([fakeWorker]);
 
       const runtime: ManagerRuntime = await startManager({
         databasePath: join(root, "manager.db"),
@@ -69,7 +74,7 @@ describe("Rust Worker Supervisor Recovery Gate", () => {
       expect(tools.tools.length).toBeGreaterThan(0);
 
       const configRes = await client.callTool({
-        name: "get_config",
+        name: "identify",
         arguments: {},
       });
       expect(configRes.isError).toBeFalsy();
@@ -101,7 +106,7 @@ describe("Rust Worker Supervisor Recovery Gate", () => {
 
       // 5. Verify subsequent call succeeds
       const postRecoveryRes = await client.callTool({
-        name: "get_config",
+        name: "identify",
         arguments: {},
       });
       expect(postRecoveryRes.isError).toBeFalsy();
