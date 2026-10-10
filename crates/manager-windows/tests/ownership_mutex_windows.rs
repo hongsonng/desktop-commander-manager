@@ -1,5 +1,5 @@
+use manager_platform::SupervisorOwnershipGuard;
 use manager_windows::ownership_mutex::WindowsSupervisorOwnershipGuard;
-use manager_worker::SupervisorOwnershipGuard;
 
 #[test]
 fn test_ownership_mutex_single_holder_and_release() {

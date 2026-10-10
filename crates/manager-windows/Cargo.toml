@@ -8,7 +8,6 @@ authors.workspace = true
 [dependencies]
 manager-protocol = { path = "../manager-protocol" }
 manager-platform = { path = "../manager-platform" }
-manager-worker = { path = "../manager-worker" }
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]

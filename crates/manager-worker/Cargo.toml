@@ -7,5 +7,8 @@ authors.workspace = true
 
 [dependencies]
 manager-protocol = { path = "../manager-protocol" }
+manager-platform = { path = "../manager-platform" }
 serde.workspace = true
+serde_json.workspace = true
 thiserror.workspace = true
+tokio.workspace = true

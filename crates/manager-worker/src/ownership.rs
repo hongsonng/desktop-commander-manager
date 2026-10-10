@@ -1,3 +1,1 @@
-pub trait SupervisorOwnershipGuard: Send + Sync {
-    fn is_held(&self) -> bool;
-}
+pub use manager_platform::SupervisorOwnershipGuard;

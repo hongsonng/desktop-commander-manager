@@ -86,7 +86,6 @@ version = "0.1.0"
 dependencies = [
  "manager-platform",
  "manager-protocol",
- "manager-worker",
  "serde",
  "serde_json",
  "thiserror",
@@ -97,9 +96,12 @@ dependencies = [
 name = "manager-worker"
 version = "0.1.0"
 dependencies = [
+ "manager-platform",
  "manager-protocol",
  "serde",
+ "serde_json",
  "thiserror",
+ "tokio",
 ]
 
 [[package]]

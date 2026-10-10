@@ -1,5 +1,4 @@
-use manager_platform::PlatformError;
-use manager_worker::SupervisorOwnershipGuard;
+use manager_platform::{PlatformError, SupervisorOwnershipGuard};
 use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
 use windows_sys::Win32::System::Threading::{CreateMutexW, ReleaseMutex, WaitForSingleObject};
 
