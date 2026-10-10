@@ -45,6 +45,23 @@ function defaultWorker(id: string, now: string): WorkerRecord {
   return { id, name: id === 'worker-1' ? 'Worker 1' : 'Worker 2', enabled: true, status: 'STOPPED', pid: null, failureCount: 0, lastHeartbeatAt: null, createdAt: now, updatedAt: now }
 }
 
+export function resolveSidecarExecutablePath(configured?: string): string {
+  if (configured && existsSync(configured)) return configured
+  const candidates = [
+    configured,
+    resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe'),
+    resolve(process.cwd(), 'target', 'debug', 'dcm-manager.exe'),
+    resolve(process.cwd(), 'bin', 'dcm-manager.exe'),
+    resolve(process.cwd(), 'dcm-manager.exe'),
+  ]
+  for (const candidate of candidates) {
+    if (candidate && existsSync(candidate)) {
+      return candidate
+    }
+  }
+  return configured ?? resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
+}
+
 export async function startManager(config: ManagerConfig, overrides: Overrides = {}): Promise<ManagerRuntime> {
   mkdirSync(dirname(config.databasePath), { recursive: true })
   mkdirSync(config.runtimeRoot, { recursive: true })
@@ -69,9 +86,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       workerOwner === 'rust' ||
       workerOwner === 'shadow')
   ) {
-    const sidecarPath =
-      config.nativeSidecarPath ??
-      resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
+    const sidecarPath = resolveSidecarExecutablePath(config.nativeSidecarPath)
     try {
       sidecarClient = await NativeSidecarClient.start(sidecarPath, {
         DCM_RUNTIME_ROOT: config.runtimeRoot,
