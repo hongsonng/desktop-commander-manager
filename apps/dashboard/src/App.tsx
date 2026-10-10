@@ -501,68 +501,130 @@ export function App() {
 
   return (
     <main className="app-shell" id="overview">
-      <header className="command-bar">
-        <div className="brand-lockup">
-          <img
-            className="brand-mark"
-            src="/desktop-commander-manager.png?v=20261007-2"
-            alt=""
-            aria-hidden="true"
-          />
-          <div>
-            <p className="eyebrow">LOCAL CONTROL PLANE</p>
-            <h1>Desktop Commander Manager</h1>
-          </div>
-        </div>
-        <div className="command-actions">
-          <div
-            className={`connection-status connection-${connectionState}`}
-            role="status"
-          >
-            <span className="status-dot" aria-hidden="true" />
+      <div className="dashboard-frame">
+        <aside className="dashboard-sidebar" aria-label="Dashboard sidebar">
+          <div className="brand-lockup">
+            <img
+              className="brand-mark"
+              src="/desktop-commander-manager.png?v=20261007-2"
+              alt=""
+              aria-hidden="true"
+            />
             <div>
-              <strong>{connectionLabel}</strong>
-              <span>{lastUpdatedLabel}</span>
+              <p className="eyebrow">LOCAL CONTROL PLANE</p>
+              <h1>Desktop Commander Manager</h1>
             </div>
           </div>
-          <button
-            className="icon-button"
-            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            {theme === "dark" ? "Light" : "Dark"}
-          </button>
-          <button
-            className="icon-button refresh-button"
-            aria-busy={refreshing}
-            aria-label={
-              refreshing ? "Refreshing dashboard" : "Refresh dashboard"
-            }
-            disabled={refreshing}
-            onClick={() => void refresh()}
-            title={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
-          >
-            <svg
-              className={`refresh-icon${refreshing ? " is-spinning" : ""}`}
-              viewBox="0 0 24 24"
-              aria-hidden="true"
-            >
-              <path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7" />
-            </svg>
-          </button>
-        </div>
-      </header>
 
-      <nav className="dashboard-nav" aria-label="Dashboard sections">
-        <div className="nav-links">
-          <a className={activeSection === "overview" ? "nav-current" : ""} href="#overview" onClick={() => setActiveSection("overview")}>Overview</a>
-          <a className={activeSection === "activity" ? "nav-current" : ""} href="#activity" onClick={() => setActiveSection("activity")}>Live activity</a>
-          <a className={activeSection === "workers" ? "nav-current" : ""} href="#workers" onClick={() => setActiveSection("workers")}>Workers</a>
-          <a className={activeSection === "resources" ? "nav-current" : ""} href="#resources" onClick={() => setActiveSection("resources")}>Resources</a>
-          <a className={activeSection === "routing" ? "nav-current" : ""} href="#routing" onClick={() => setActiveSection("routing")}>Routing &amp; audit</a>
-        </div>
-        <span className="nav-meta"><span className="nav-pulse" /> AUTO REFRESH · 2S</span>
-      </nav>
+          <nav
+            className="dashboard-nav"
+            aria-label="Primary dashboard navigation"
+          >
+            <p className="nav-section-label">Operations</p>
+            <div className="nav-links">
+              <a
+                aria-current={activeSection === "overview" ? "page" : undefined}
+                className={activeSection === "overview" ? "nav-current" : ""}
+                href="#overview"
+                onClick={() => setActiveSection("overview")}
+              >
+                <span className="nav-icon" aria-hidden="true" />
+                Overview
+              </a>
+              <a
+                aria-current={activeSection === "activity" ? "page" : undefined}
+                className={activeSection === "activity" ? "nav-current" : ""}
+                href="#activity"
+                onClick={() => setActiveSection("activity")}
+              >
+                <span className="nav-icon" aria-hidden="true" />
+                Live activity
+              </a>
+              <a
+                aria-current={activeSection === "workers" ? "page" : undefined}
+                className={activeSection === "workers" ? "nav-current" : ""}
+                href="#workers"
+                onClick={() => setActiveSection("workers")}
+              >
+                <span className="nav-icon" aria-hidden="true" />
+                Workers
+              </a>
+              <a
+                aria-current={activeSection === "resources" ? "page" : undefined}
+                className={activeSection === "resources" ? "nav-current" : ""}
+                href="#resources"
+                onClick={() => setActiveSection("resources")}
+              >
+                <span className="nav-icon" aria-hidden="true" />
+                Resources
+              </a>
+              <a
+                aria-current={activeSection === "routing" ? "page" : undefined}
+                className={activeSection === "routing" ? "nav-current" : ""}
+                href="#routing"
+                onClick={() => setActiveSection("routing")}
+              >
+                <span className="nav-icon" aria-hidden="true" />
+                Routing &amp; audit
+              </a>
+            </div>
+          </nav>
+
+          <div className="sidebar-footer">
+            <span className="nav-meta">
+              <span className="nav-pulse" /> AUTO REFRESH · 2S
+            </span>
+            <div>
+              <span>Connection mode</span>
+              <strong>Local transport</strong>
+            </div>
+          </div>
+        </aside>
+
+        <div className="dashboard-content">
+          <header className="command-bar">
+            <div className="page-heading">
+              <p className="eyebrow">CONTROL CENTER</p>
+              <strong>Operations overview</strong>
+            </div>
+            <div className="command-actions">
+              <div
+                className={`connection-status connection-${connectionState}`}
+                role="status"
+              >
+                <span className="status-dot" aria-hidden="true" />
+                <div>
+                  <strong>{connectionLabel}</strong>
+                  <span>{lastUpdatedLabel}</span>
+                </div>
+              </div>
+              <button
+                className="icon-button"
+                aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} theme`}
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              >
+                {theme === "dark" ? "Light" : "Dark"}
+              </button>
+              <button
+                className="icon-button refresh-button"
+                aria-busy={refreshing}
+                aria-label={
+                  refreshing ? "Refreshing dashboard" : "Refresh dashboard"
+                }
+                disabled={refreshing}
+                onClick={() => void refresh()}
+                title={refreshing ? "Refreshing dashboard" : "Refresh dashboard"}
+              >
+                <svg
+                  className={`refresh-icon${refreshing ? " is-spinning" : ""}`}
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7" />
+                </svg>
+              </button>
+            </div>
+          </header>
 
       <section className="hero-panel" aria-label="Operations overview">
         <div className="hero-copy">
@@ -989,6 +1051,8 @@ export function App() {
             </div>
           )}
         </section>
+      </div>
+        </div>
       </div>
 
       {selectedCall && (
