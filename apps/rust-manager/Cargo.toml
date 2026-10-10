@@ -8,7 +8,6 @@ authors.workspace = true
 [dependencies]
 manager-protocol = { path = "../../crates/manager-protocol" }
 manager-platform = { path = "../../crates/manager-platform" }
-manager-windows = { path = "../../crates/manager-windows" }
 manager-worker = { path = "../../crates/manager-worker" }
 manager-db = { path = "../../crates/manager-db" }
 manager-router = { path = "../../crates/manager-router" }
@@ -21,7 +20,11 @@ axum.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(windows)'.dependencies]
+manager-windows = { path = "../../crates/manager-windows" }
 windows-sys.workspace = true
+
+[target.'cfg(target_os = "linux")'.dependencies]
+manager-linux = { path = "../../crates/manager-linux" }
 
 [dev-dependencies]
 tempfile.workspace = true
