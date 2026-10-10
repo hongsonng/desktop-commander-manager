@@ -18,7 +18,10 @@
     "smoke:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1",
     "benchmark:node": "tsx tests/benchmarks/node-baseline.ts",
     "test:contracts": "vitest run tests/contracts",
-    "test:recovery": "vitest run tests/recovery"
+    "test:recovery": "vitest run tests/recovery",
+    "build:rust": "cargo build --workspace --release",
+    "test:rust": "cargo test --workspace",
+    "lint:rust": "cargo fmt --check && cargo clippy --workspace --all-targets --all-features -- -D warnings"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
