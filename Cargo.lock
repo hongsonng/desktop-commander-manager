@@ -27,6 +27,7 @@ dependencies = [
  "manager-platform",
  "manager-protocol",
  "manager-windows",
+ "manager-worker",
  "serde",
  "serde_json",
  "tokio",

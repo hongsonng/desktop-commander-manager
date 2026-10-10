@@ -65,3 +65,45 @@ fn test_sidecar_stdio_protocol() {
     let exit_status = child.wait().expect("child exit status");
     assert!(exit_status.success(), "Sidecar should exit cleanly on EOF");
 }
+
+#[test]
+fn test_sidecar_worker_unknown_error() {
+    let bin_path = env!("CARGO_BIN_EXE_dcm-manager");
+    let mut child = Command::new(bin_path)
+        .arg("sidecar")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::inherit())
+        .spawn()
+        .expect("failed to spawn dcm-manager sidecar");
+
+    let mut stdin = child.stdin.take().expect("failed to take stdin");
+    let stdout = child.stdout.take().expect("failed to take stdout");
+    let mut reader = BufReader::new(stdout);
+
+    let req = SidecarEnvelope {
+        id: 99,
+        request: SidecarRequest::WorkerStart(manager_protocol::WorkerStartRequest {
+            worker_id: "non-existent-worker".into(),
+            runtime_dir: "".into(),
+            command: "".into(),
+            args: vec![],
+            env: std::collections::HashMap::new(),
+        }),
+    };
+    let req_str = serde_json::to_string(&req).unwrap();
+    writeln!(stdin, "{}", req_str).unwrap();
+    stdin.flush().unwrap();
+
+    let mut line = String::new();
+    reader.read_line(&mut line).unwrap();
+    let reply: SidecarReply = serde_json::from_str(&line).expect("deserialize reply");
+    assert_eq!(reply.id, 99);
+    assert!(reply.error.is_some());
+    let err = reply.error.unwrap();
+    assert_eq!(err.code, "WORKER_ERROR");
+    assert!(err.message.contains("Worker not found"));
+
+    drop(stdin);
+    let _ = child.wait();
+}

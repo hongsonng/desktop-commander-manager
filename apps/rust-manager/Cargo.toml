@@ -9,6 +9,7 @@ authors.workspace = true
 manager-protocol = { path = "../../crates/manager-protocol" }
 manager-platform = { path = "../../crates/manager-platform" }
 manager-windows = { path = "../../crates/manager-windows" }
+manager-worker = { path = "../../crates/manager-worker" }
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true

@@ -1,32 +1,48 @@
 use manager_platform::ProcessPlatform;
 use manager_protocol::{
-    SidecarEnvelope, SidecarError, SidecarReply, SidecarRequest, SidecarResult,
+    SidecarEnvelope, SidecarError, SidecarEventEnvelope, SidecarMessage, SidecarReply,
+    SidecarRequest, SidecarResult, UpstreamFailureKind, WorkerHandleResult,
+};
+use manager_windows::ownership_mutex::{
+    WindowsSupervisorOwnershipGuard, DEFAULT_SUPERVISOR_MUTEX_NAME,
 };
 use manager_windows::WindowsProcessPlatform;
+use manager_worker::{resolve_desktop_commander_spawn_spec, WorkerSupervisor};
 use serde_json::Value;
-use std::io::{self, BufRead, Write};
+use std::io;
+use std::path::PathBuf;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+use tokio::sync::mpsc;
 
-pub fn run_sidecar() -> io::Result<()> {
-    let platform = WindowsProcessPlatform;
-    let stdin = io::stdin();
-    let mut stdout = io::stdout();
+pub async fn run_sidecar() -> io::Result<()> {
+    let platform: Arc<dyn ProcessPlatform> = Arc::new(WindowsProcessPlatform);
+    let mut supervisor: Option<WorkerSupervisor> = None;
 
-    for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(e) => {
-                eprintln!("[sidecar] Error reading line: {}", e);
-                break;
-            }
-        };
+    let (stdout_tx, mut stdout_rx) = mpsc::channel::<String>(256);
 
+    // Stdout background writer task
+    tokio::spawn(async move {
+        let mut stdout = tokio::io::stdout();
+        while let Some(line) = stdout_rx.recv().await {
+            let _ = stdout.write_all(line.as_bytes()).await;
+            let _ = stdout.write_all(b"\n").await;
+            let _ = stdout.flush().await;
+        }
+    });
+
+    let stdin = tokio::io::stdin();
+    let mut reader = BufReader::new(stdin).lines();
+
+    while let Ok(Some(line)) = reader.next_line().await {
         let trimmed = line.trim();
         if trimmed.is_empty() {
             continue;
         }
 
         let reply = match serde_json::from_str::<SidecarEnvelope>(trimmed) {
-            Ok(envelope) => handle_envelope(&platform, envelope),
+            Ok(envelope) => handle_envelope(&platform, &mut supervisor, envelope, &stdout_tx).await,
             Err(err) => {
                 let id = serde_json::from_str::<Value>(trimmed)
                     .ok()
@@ -45,16 +61,79 @@ pub fn run_sidecar() -> io::Result<()> {
         };
 
         if let Ok(serialized) = serde_json::to_string(&reply) {
-            let _ = stdout.write_all(serialized.as_bytes());
-            let _ = stdout.write_all(b"\n");
-            let _ = stdout.flush();
+            let _ = stdout_tx.send(serialized).await;
         }
     }
 
     Ok(())
 }
 
-fn handle_envelope(platform: &WindowsProcessPlatform, envelope: SidecarEnvelope) -> SidecarReply {
+fn get_or_init_supervisor<'a>(
+    supervisor_slot: &'a mut Option<WorkerSupervisor>,
+    platform: &Arc<dyn ProcessPlatform>,
+    stdout_tx: &mpsc::Sender<String>,
+) -> Result<&'a WorkerSupervisor, SidecarError> {
+    if supervisor_slot.is_none() {
+        let root = std::env::var("DCM_RUNTIME_ROOT")
+            .map(PathBuf::from)
+            .unwrap_or_else(|_| PathBuf::from("data").join("workers"));
+        let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+
+        let guard = match WindowsSupervisorOwnershipGuard::acquire(DEFAULT_SUPERVISOR_MUTEX_NAME) {
+            Ok(g) => Box::new(g),
+            Err(e) => {
+                return Err(SidecarError::with_failure_kind(
+                    "OWNERSHIP_CONFLICT",
+                    format!("Failed to acquire worker supervisor ownership mutex: {e}"),
+                    UpstreamFailureKind::PreDispatch,
+                ));
+            }
+        };
+
+        let mut configs = Vec::new();
+        for worker_id in &["worker-1", "worker-2"] {
+            let worker_runtime = root.join(worker_id);
+            if let Ok(cfg) =
+                resolve_desktop_commander_spawn_spec(worker_id, &worker_runtime, &base_dir)
+            {
+                configs.push(cfg);
+            }
+        }
+
+        let supervisor = WorkerSupervisor::new(configs, Some(Arc::clone(platform)), Some(guard))
+            .map_err(|e| {
+                SidecarError::with_failure_kind(
+                    "SUPERVISOR_INIT_FAILED",
+                    e.to_string(),
+                    UpstreamFailureKind::PreDispatch,
+                )
+            })?;
+
+        // Background worker state event streamer
+        let mut event_rx = supervisor.subscribe_events();
+        let event_tx = stdout_tx.clone();
+        tokio::spawn(async move {
+            while let Ok(event) = event_rx.recv().await {
+                let envelope = SidecarEventEnvelope::WorkerStateChanged(event);
+                let msg = SidecarMessage::Event(envelope);
+                if let Ok(serialized) = serde_json::to_string(&msg) {
+                    let _ = event_tx.send(serialized).await;
+                }
+            }
+        });
+
+        *supervisor_slot = Some(supervisor);
+    }
+
+    Ok(supervisor_slot.as_ref().unwrap())
+}
+
+async fn handle_envelope(
+    platform: &Arc<dyn ProcessPlatform>,
+    supervisor: &mut Option<WorkerSupervisor>,
+    envelope: SidecarEnvelope,
+    stdout_tx: &mpsc::Sender<String>,
+) -> SidecarReply {
     match envelope.request {
         SidecarRequest::ProcessSnapshot(req) => match platform.snapshot(&req) {
             Ok(res) => SidecarReply {
@@ -92,18 +171,204 @@ fn handle_envelope(platform: &WindowsProcessPlatform, envelope: SidecarEnvelope)
                 error: Some(SidecarError::new("PLATFORM_ERROR", err.to_string())),
             },
         },
-        SidecarRequest::WorkerStart(_)
-        | SidecarRequest::WorkerStop(_)
-        | SidecarRequest::WorkerRestart(_)
-        | SidecarRequest::WorkerListTools(_)
-        | SidecarRequest::WorkerCallTool(_)
-        | SidecarRequest::WorkerShutdownAll(_) => SidecarReply {
-            id: envelope.id,
-            result: None,
-            error: Some(SidecarError::new(
-                "NOT_IMPLEMENTED",
-                "Worker runtime not yet integrated in sidecar",
-            )),
-        },
+        SidecarRequest::WorkerStart(req) => {
+            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+                Ok(s) => s,
+                Err(e) => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(e),
+                    }
+                }
+            };
+            if !req.command.is_empty() && !req.runtime_dir.is_empty() {
+                let cfg = manager_worker::WorkerLaunchConfig::new(
+                    &req.worker_id,
+                    PathBuf::from(&req.command),
+                    req.args,
+                    req.env,
+                    PathBuf::from(&req.runtime_dir),
+                );
+                sup.ensure_worker(cfg).await;
+            }
+            match sup.start_worker(&req.worker_id).await {
+                Ok(pid) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::WorkerHandle(WorkerHandleResult {
+                        worker_id: req.worker_id,
+                        pid,
+                    })),
+                    error: None,
+                },
+                Err(err) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(SidecarError::with_failure_kind(
+                        "WORKER_ERROR",
+                        err.to_string(),
+                        err.failure_kind(),
+                    )),
+                },
+            }
+        }
+        SidecarRequest::WorkerStop(req) => {
+            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+                Ok(s) => s,
+                Err(e) => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(e),
+                    }
+                }
+            };
+            match sup.stop_worker(&req.worker_id).await {
+                Ok(()) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::WorkerHandle(WorkerHandleResult {
+                        worker_id: req.worker_id,
+                        pid: 0,
+                    })),
+                    error: None,
+                },
+                Err(err) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(SidecarError::with_failure_kind(
+                        "WORKER_ERROR",
+                        err.to_string(),
+                        err.failure_kind(),
+                    )),
+                },
+            }
+        }
+        SidecarRequest::WorkerRestart(req) => {
+            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+                Ok(s) => s,
+                Err(e) => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(e),
+                    }
+                }
+            };
+            match sup.restart_worker(&req.worker_id).await {
+                Ok(pid) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::WorkerHandle(WorkerHandleResult {
+                        worker_id: req.worker_id,
+                        pid,
+                    })),
+                    error: None,
+                },
+                Err(err) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(SidecarError::with_failure_kind(
+                        "WORKER_ERROR",
+                        err.to_string(),
+                        err.failure_kind(),
+                    )),
+                },
+            }
+        }
+        SidecarRequest::WorkerListTools(req) => {
+            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+                Ok(s) => s,
+                Err(e) => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(e),
+                    }
+                }
+            };
+            match sup
+                .list_tools(&req.worker_id, req.meta, Duration::from_secs(10))
+                .await
+            {
+                Ok(res) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::ListTools(res)),
+                    error: None,
+                },
+                Err(err) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(SidecarError::with_failure_kind(
+                        "WORKER_ERROR",
+                        err.to_string(),
+                        err.failure_kind(),
+                    )),
+                },
+            }
+        }
+        SidecarRequest::WorkerCallTool(req) => {
+            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+                Ok(s) => s,
+                Err(e) => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(e),
+                    }
+                }
+            };
+            match sup
+                .call_tool(
+                    &req.worker_id,
+                    &req.name,
+                    req.arguments,
+                    req.meta,
+                    Duration::from_secs(30),
+                )
+                .await
+            {
+                Ok(res) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::CallTool(res)),
+                    error: None,
+                },
+                Err(err) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(SidecarError::with_failure_kind(
+                        "WORKER_ERROR",
+                        err.to_string(),
+                        err.failure_kind(),
+                    )),
+                },
+            }
+        }
+        SidecarRequest::WorkerShutdownAll(_) => {
+            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+                Ok(s) => s,
+                Err(e) => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(e),
+                    }
+                }
+            };
+            match sup.shutdown_all().await {
+                Ok(()) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::Empty(serde_json::json!({}))),
+                    error: None,
+                },
+                Err(err) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(SidecarError::with_failure_kind(
+                        "WORKER_ERROR",
+                        err.to_string(),
+                        err.failure_kind(),
+                    )),
+                },
+            }
+        }
     }
 }
