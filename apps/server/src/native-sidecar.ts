@@ -99,6 +99,17 @@ export interface WorkerCallToolResult {
   isError?: boolean
 }
 
+export interface ManagementStartOptions {
+  host?: string
+  port?: number
+  dashboardDir?: string
+  mcpUrl?: string
+}
+
+export interface ManagementStartResult {
+  url: string
+}
+
 export interface WorkerStateEvent {
   workerId: string
   state: string
@@ -363,6 +374,14 @@ export class NativeSidecarClient {
   async stateAppendEvent(event: EventInput): Promise<EventRecord> {
     const res = await this.request<{ event: EventRecord }>('state/appendEvent', { event })
     return res.event
+  }
+
+  async managementStart(options: ManagementStartOptions = {}): Promise<ManagementStartResult> {
+    return this.request<ManagementStartResult>('management/start', options)
+  }
+
+  async managementStop(): Promise<void> {
+    await this.request<void>('management/stop', {})
   }
 
   async close(): Promise<void> {

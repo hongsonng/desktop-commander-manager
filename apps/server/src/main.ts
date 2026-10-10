@@ -73,6 +73,16 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
   const platformOwner = config.platformOwner ?? 'node'
   const workerOwner = config.workerOwner ?? 'node'
   const stateOwner = config.stateOwner ?? 'node'
+  const managementApiOwner = config.managementApiOwner ?? 'node'
+
+  if (managementApiOwner === 'rust') {
+    if (stateOwner !== 'rust') {
+      throw new Error('managementApiOwner="rust" requires stateOwner="rust"')
+    }
+    if (workerOwner !== 'rust') {
+      throw new Error('managementApiOwner="rust" requires workerOwner="rust"')
+    }
+  }
 
   if (stateOwner === 'rust' && workerOwner !== 'rust') {
     throw new Error('stateOwner="rust" requires workerOwner="rust"')
@@ -87,10 +97,17 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       platformOwner === 'shadow' ||
       workerOwner === 'rust' ||
       workerOwner === 'shadow' ||
-      stateOwner === 'rust')
+      stateOwner === 'rust' ||
+      managementApiOwner === 'rust')
   ) {
     const sidecarPath = resolveSidecarExecutablePath(config.nativeSidecarPath)
-    if ((platformOwner === 'rust' || workerOwner === 'rust' || stateOwner === 'rust') && !existsSync(sidecarPath)) {
+    if (
+      (platformOwner === 'rust' ||
+        workerOwner === 'rust' ||
+        stateOwner === 'rust' ||
+        managementApiOwner === 'rust') &&
+      !existsSync(sidecarPath)
+    ) {
       throw new Error(`Native sidecar executable not found at "${sidecarPath}"`)
     }
     try {
@@ -98,7 +115,12 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
         DCM_RUNTIME_ROOT: config.runtimeRoot,
       })
     } catch (sidecarErr) {
-      if (platformOwner === 'rust' || workerOwner === 'rust' || stateOwner === 'rust') {
+      if (
+        platformOwner === 'rust' ||
+        workerOwner === 'rust' ||
+        stateOwner === 'rust' ||
+        managementApiOwner === 'rust'
+      ) {
         throw new Error(
           `Failed to start native sidecar for owner="rust": ${sidecarErr}`,
         )
@@ -373,30 +395,54 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
 
   const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
   const dashboardDir = config.dashboardDir ?? (existsSync(defaultDashboardDir) ? defaultDashboardDir : undefined)
-  const managementRuntime = await createManagementApi({
-    state,
-    database,
-    actions,
-    connectionInfo: {
-      mode: 'direct-local',
+
+  let managementUrl: string
+  let closeManagement: () => Promise<void>
+
+  if (managementApiOwner === 'rust') {
+    if (!sidecarClient) {
+      throw new Error('Native sidecar client is required when managementApiOwner is "rust"')
+    }
+    const startResult = await sidecarClient.managementStart({
+      host: '127.0.0.1',
+      port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT,
+      dashboardDir,
       mcpUrl: mcpRuntime.url,
-      workerStrategy: 'sticky-failover',
-    },
-    port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT,
-    dashboardDir,
-    resources: resourceMonitor,
-  })
+    })
+    managementUrl = startResult.url
+    closeManagement = async () => {
+      await sidecarClient!.managementStop()
+    }
+  } else {
+    const managementRuntime = await createManagementApi({
+      state,
+      database,
+      actions,
+      connectionInfo: {
+        mode: 'direct-local',
+        mcpUrl: mcpRuntime.url,
+        workerStrategy: 'sticky-failover',
+      },
+      port: config.managementPort ?? DEFAULT_MANAGEMENT_PORT,
+      dashboardDir,
+      resources: resourceMonitor,
+    })
+    managementUrl = managementRuntime.url
+    closeManagement = async () => {
+      await managementRuntime.close()
+    }
+  }
   let closed = false
 
   return {
     state,
     database,
     mcpUrl: mcpRuntime.url,
-    managementUrl: managementRuntime.url,
+    managementUrl,
     async close() {
       if (closed) return
       closed = true
-      await managementRuntime.close().catch(() => undefined)
+      await closeManagement().catch(() => undefined)
       await mcpRuntime.close().catch(() => undefined)
       for (const client of clients.values()) await client.close().catch(() => undefined)
       clients.clear()
