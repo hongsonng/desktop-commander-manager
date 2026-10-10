@@ -15,7 +15,10 @@
     "autostart:uninstall": "tsx apps/server/src/autostart-cli.ts uninstall",
     "autostart:status": "tsx apps/server/src/autostart-cli.ts status",
     "tunnel:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-tunnel.ps1",
-    "smoke:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1"
+    "smoke:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1",
+    "benchmark:node": "tsx tests/benchmarks/node-baseline.ts",
+    "test:contracts": "vitest run tests/contracts",
+    "test:recovery": "vitest run tests/recovery"
   },
   "devDependencies": {
     "typescript": "^5.9.3",
