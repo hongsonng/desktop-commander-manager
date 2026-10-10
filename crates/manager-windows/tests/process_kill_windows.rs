@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 use manager_platform::{PlatformError, ProcessPlatform};
 use manager_protocol::KillProcessTreeRequest;
 use manager_windows::WindowsProcessPlatform;

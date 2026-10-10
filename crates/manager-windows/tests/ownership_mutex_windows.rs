@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 use manager_platform::SupervisorOwnershipGuard;
 use manager_windows::ownership_mutex::WindowsSupervisorOwnershipGuard;
 

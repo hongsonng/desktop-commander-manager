@@ -1,3 +1,5 @@
+#![cfg(windows)]
+
 use manager_platform::ProcessPlatform;
 use manager_protocol::ProcessSnapshotRequest;
 use manager_windows::WindowsProcessPlatform;
