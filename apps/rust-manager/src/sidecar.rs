@@ -19,6 +19,7 @@ use tokio::sync::mpsc;
 pub async fn run_sidecar() -> io::Result<()> {
     let platform: Arc<dyn ProcessPlatform> = Arc::new(WindowsProcessPlatform);
     let mut supervisor: Option<WorkerSupervisor> = None;
+    let mut backend: Option<crate::backend::ManagerBackend> = None;
 
     let (stdout_tx, mut stdout_rx) = mpsc::channel::<String>(256);
 
@@ -42,7 +43,16 @@ pub async fn run_sidecar() -> io::Result<()> {
         }
 
         let reply = match serde_json::from_str::<SidecarEnvelope>(trimmed) {
-            Ok(envelope) => handle_envelope(&platform, &mut supervisor, envelope, &stdout_tx).await,
+            Ok(envelope) => {
+                handle_envelope(
+                    &platform,
+                    &mut supervisor,
+                    &mut backend,
+                    envelope,
+                    &stdout_tx,
+                )
+                .await
+            }
             Err(err) => {
                 let id = serde_json::from_str::<Value>(trimmed)
                     .ok()
@@ -130,9 +140,22 @@ fn get_or_init_supervisor<'a>(
     Ok(supervisor_slot.as_ref().unwrap())
 }
 
+fn get_active_supervisor<'a>(
+    backend: &'a Option<crate::backend::ManagerBackend>,
+    supervisor_slot: &'a mut Option<WorkerSupervisor>,
+    platform: &Arc<dyn ProcessPlatform>,
+    stdout_tx: &mpsc::Sender<String>,
+) -> Result<&'a WorkerSupervisor, SidecarError> {
+    if let Some(b) = backend.as_ref() {
+        return Ok(b.supervisor());
+    }
+    get_or_init_supervisor(supervisor_slot, platform, stdout_tx)
+}
+
 async fn handle_envelope(
     platform: &Arc<dyn ProcessPlatform>,
     supervisor: &mut Option<WorkerSupervisor>,
+    backend: &mut Option<crate::backend::ManagerBackend>,
     envelope: SidecarEnvelope,
     stdout_tx: &mpsc::Sender<String>,
 ) -> SidecarReply {
@@ -174,7 +197,7 @@ async fn handle_envelope(
             },
         },
         SidecarRequest::WorkerStart(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -215,7 +238,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerStop(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -246,7 +269,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerRestart(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -277,7 +300,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerListTools(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -308,7 +331,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerCallTool(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -345,7 +368,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerShutdownAll(_) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -369,6 +392,257 @@ async fn handle_envelope(
                         err.to_string(),
                         err.failure_kind(),
                     )),
+                },
+            }
+        }
+        SidecarRequest::BackendOpen(req) => {
+            let mutex_name = std::env::var("DCM_SUPERVISOR_MUTEX_NAME")
+                .unwrap_or_else(|_| DEFAULT_SUPERVISOR_MUTEX_NAME.to_string());
+            let guard = match WindowsSupervisorOwnershipGuard::acquire(&mutex_name) {
+                Ok(g) => Box::new(g),
+                Err(e) => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::with_failure_kind(
+                            "OWNERSHIP_CONFLICT",
+                            format!("Failed to acquire worker supervisor ownership mutex: {e}"),
+                            UpstreamFailureKind::PreDispatch,
+                        )),
+                    };
+                }
+            };
+
+            match crate::backend::ManagerBackend::open(
+                &PathBuf::from(&req.database_path),
+                &PathBuf::from(&req.runtime_root),
+                Arc::clone(platform),
+                guard,
+                stdout_tx.clone(),
+            )
+            .await
+            {
+                Ok(b) => {
+                    *backend = Some(b);
+                    SidecarReply {
+                        id: envelope.id,
+                        result: Some(SidecarResult::Empty(serde_json::json!({ "opened": true }))),
+                        error: None,
+                    }
+                }
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::BackendClose(_) => {
+            if let Some(b) = backend.take() {
+                let _ = b.close().await;
+            }
+            SidecarReply {
+                id: envelope.id,
+                result: Some(SidecarResult::Empty(serde_json::json!({ "closed": true }))),
+                error: None,
+            }
+        }
+        SidecarRequest::ProxyListTools(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    }
+                }
+            };
+            match b.list_tools(req).await {
+                Ok(res) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::ProxyListTools(res)),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::ProxyCallTool(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    }
+                }
+            };
+            match b.call_tool(req).await {
+                Ok(res) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::ProxyCallTool(res)),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::StateGetWorker(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    }
+                }
+            };
+            match b.get_worker(&req.worker_id).await {
+                Ok(worker) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::StateGetWorker(
+                        manager_protocol::StateGetWorkerResult { worker },
+                    )),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::StateListWorkers(_) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    }
+                }
+            };
+            match b.list_workers().await {
+                Ok(workers) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::StateListWorkers(
+                        manager_protocol::StateListWorkersResult { workers },
+                    )),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::StateListSessions(_) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    }
+                }
+            };
+            match b.list_sessions().await {
+                Ok(sessions) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::StateListSessions(
+                        manager_protocol::StateListSessionsResult { sessions },
+                    )),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::StateListEvents(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    }
+                }
+            };
+            match b.list_events(req.limit).await {
+                Ok(events) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::StateListEvents(
+                        manager_protocol::StateListEventsResult { events },
+                    )),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::StateAppendEvent(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    }
+                }
+            };
+            match b.append_event(req.event).await {
+                Ok(event) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::StateAppendEvent(
+                        manager_protocol::StateAppendEventResult { event },
+                    )),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
                 },
             }
         }

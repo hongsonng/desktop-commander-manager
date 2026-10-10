@@ -5,6 +5,8 @@ members = [
     "crates/manager-platform",
     "crates/manager-windows",
     "crates/manager-worker",
+    "crates/manager-db",
+    "crates/manager-router",
 ]
 resolver = "2"
 
@@ -15,8 +17,12 @@ license = "MIT"
 authors = ["Desktop Commander Manager Contributors"]
 
 [workspace.dependencies]
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.10"
+tempfile = "3.16"
 thiserror = "2.0"
 tokio = { version = "1.43", features = ["full"] }
 windows-sys = { version = "0.59", features = [

@@ -6,6 +6,8 @@ import { CallToolRequestSchema, ErrorCode, ListToolsRequestSchema, McpError } fr
 import { createFallbackSessionId, UpstreamCallError, type RetryPolicy } from '@dc-manager/router'
 import type { RouteContext, WorkerDescriptor } from '@dc-manager/shared'
 import type { ProxyWorkerClient } from '@dc-manager/mcp-proxy'
+import type { McpProxyBackend } from './mcp-proxy-backend.js'
+import { NodeMcpProxyBackend } from './node-mcp-proxy-backend.js'
 
 interface SessionRouterLike {
   resolve(context: RouteContext): Promise<WorkerDescriptor>
@@ -26,9 +28,10 @@ export type ToolCallAudit = {
 type McpHttpServerDeps = {
   host?: string
   port?: number
-  sessionRouter: SessionRouterLike
-  retryPolicy: RetryPolicy
-  getWorkerClient(workerId: string): ProxyWorkerClient
+  sessionRouter?: SessionRouterLike
+  retryPolicy?: RetryPolicy
+  getWorkerClient?: (workerId: string) => ProxyWorkerClient
+  proxyBackend?: McpProxyBackend
   onToolCall?(audit: ToolCallAudit): void
 }
 
@@ -81,8 +84,7 @@ function sanitizeToolDescriptor(tool: Record<string, unknown>): Record<string, u
 }
 
 async function listToolsThroughRouter(deps: McpHttpServerDeps, connectionId: string, meta: Record<string, unknown> | undefined) {
-  const worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
-  const result = await deps.getWorkerClient(worker.id).listTools(workerMeta(meta))
+  const { result } = await deps.proxyBackend!.listTools({ sessionId: sessionFromMeta(meta), connectionId }, workerMeta(meta))
   const raw = result as unknown as Record<string, unknown>
   const tools = Array.isArray(raw.tools) ? raw.tools.map((tool) => sanitizeToolDescriptor(tool as Record<string, unknown>)) : []
   return { ...raw, tools }
@@ -117,26 +119,20 @@ function emitToolCallAudit(deps: McpHttpServerDeps, audit: ToolCallAudit): void 
 async function callToolThroughRouter(deps: McpHttpServerDeps, connectionId: string, name: string, args: Record<string, unknown>, meta: Record<string, unknown> | undefined) {
   const sessionId = sessionFromMeta(meta) ?? createFallbackSessionId(connectionId)
   const startedAt = Date.now()
-  let worker = await deps.sessionRouter.resolve({ sessionId: sessionFromMeta(meta), connectionId })
-  let failedOver = false
+
   try {
-    const result = await deps.getWorkerClient(worker.id).callTool(name, args, workerMeta(meta))
-    emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'OK', durationMs: Date.now() - startedAt, failedOver })
+    const { workerId, failedOver, result } = await deps.proxyBackend!.callTool(
+      { sessionId: sessionFromMeta(meta), connectionId },
+      name,
+      args,
+      workerMeta(meta),
+    )
+    emitToolCallAudit(deps, { sessionId, workerId, toolName: name, argsSummary: summarizeToolArgs(args), status: 'OK', durationMs: Date.now() - startedAt, failedOver })
     return result
   } catch (error) {
-    if (error instanceof UpstreamCallError && deps.retryPolicy.canReplay(error)) {
-      worker = await deps.sessionRouter.failover(sessionId, worker.id)
-      failedOver = true
-      try {
-        const result = await deps.getWorkerClient(worker.id).callTool(name, args, workerMeta(meta))
-        emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'OK', durationMs: Date.now() - startedAt, failedOver })
-        return result
-      } catch (retryError) {
-        emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'ERROR', durationMs: Date.now() - startedAt, failedOver, error: retryError instanceof Error ? retryError.message : String(retryError) })
-        throw retryError
-      }
-    }
-    emitToolCallAudit(deps, { sessionId, workerId: worker.id, toolName: name, argsSummary: summarizeToolArgs(args), status: 'ERROR', durationMs: Date.now() - startedAt, failedOver, error: error instanceof Error ? error.message : String(error) })
+    const workerId = (error && typeof error === 'object' && 'workerId' in error && typeof error.workerId === 'string') ? error.workerId : 'unknown'
+    const failedOver = Boolean(error && typeof error === 'object' && 'failedOver' in error && error.failedOver)
+    emitToolCallAudit(deps, { sessionId, workerId, toolName: name, argsSummary: summarizeToolArgs(args), status: 'ERROR', durationMs: Date.now() - startedAt, failedOver, error: error instanceof Error ? error.message : String(error) })
     throw error
   }
 }
@@ -265,8 +261,18 @@ async function handleModernRequest(body: unknown, deps: McpHttpServerDeps) {
 }
 
 export async function createMcpHttpServer(deps: McpHttpServerDeps): Promise<{ url: string; close(): Promise<void> }> {
-  const host = deps.host ?? '127.0.0.1'
-  const port = deps.port ?? 8787
+  const proxyBackend = deps.proxyBackend ?? (deps.sessionRouter && deps.retryPolicy && deps.getWorkerClient
+    ? new NodeMcpProxyBackend(deps.sessionRouter, deps.retryPolicy, deps.getWorkerClient)
+    : undefined)
+  if (!proxyBackend) {
+    throw new Error('Either proxyBackend or (sessionRouter, retryPolicy, getWorkerClient) must be provided')
+  }
+  const resolvedDeps: McpHttpServerDeps = {
+    ...deps,
+    proxyBackend,
+  }
+  const host = resolvedDeps.host ?? '127.0.0.1'
+  const port = resolvedDeps.port ?? 8787
   const app = Fastify({ logger: false })
   const sessions = new Map<string, SessionRuntime>()
   const allSessions = new Set<SessionRuntime>()
@@ -276,7 +282,7 @@ export async function createMcpHttpServer(deps: McpHttpServerDeps): Promise<{ ur
     handler: async (request, reply) => {
       const headers = request.headers as Record<string, unknown>
       if (request.method === 'POST' && isModernRequest(request.body, headers)) {
-        const response = await handleModernRequest(request.body, deps)
+        const response = await handleModernRequest(request.body, resolvedDeps)
         reply.code(response.status).send(response.payload)
         return
       }
@@ -287,7 +293,7 @@ export async function createMcpHttpServer(deps: McpHttpServerDeps): Promise<{ ur
       if (!runtime && !incomingSessionId && isInitialize(request.body)) {
         const pendingConnectionId = `connection:${randomUUID()}`
         let transport!: StreamableHTTPServerTransport
-        const server = createProxyServer(deps, () => transport.sessionId ?? pendingConnectionId)
+        const server = createProxyServer(resolvedDeps, () => transport.sessionId ?? pendingConnectionId)
         transport = new StreamableHTTPServerTransport({
           sessionIdGenerator: randomUUID,
           enableJsonResponse: true,

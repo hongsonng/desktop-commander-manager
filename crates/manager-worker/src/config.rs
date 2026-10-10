@@ -30,6 +30,17 @@ impl WorkerLaunchConfig {
     }
 }
 
+fn strip_unc_prefix(path: &Path) -> PathBuf {
+    let s = path.to_string_lossy();
+    if let Some(stripped) = s.strip_prefix(r"\\?\UNC\") {
+        PathBuf::from(format!(r"\\{}", stripped))
+    } else if let Some(stripped) = s.strip_prefix(r"\\?\") {
+        PathBuf::from(stripped.to_string())
+    } else {
+        path.to_path_buf()
+    }
+}
+
 pub fn resolve_desktop_commander_spawn_spec(
     worker_id: &str,
     runtime_dir: &Path,
@@ -37,6 +48,7 @@ pub fn resolve_desktop_commander_spawn_spec(
 ) -> Result<WorkerLaunchConfig, WorkerClientError> {
     let root = runtime_dir
         .canonicalize()
+        .map(|p| strip_unc_prefix(&p))
         .unwrap_or_else(|_| runtime_dir.to_path_buf());
     let home = root.join("home");
     let temp = root.join("temp");
@@ -50,6 +62,7 @@ pub fn resolve_desktop_commander_spawn_spec(
     // 1. Find node_modules/@wonderwhy-er/desktop-commander/package.json
     let mut current = base_dir
         .canonicalize()
+        .map(|p| strip_unc_prefix(&p))
         .unwrap_or_else(|_| base_dir.to_path_buf());
     let mut pkg_json_path = None;
 
@@ -99,7 +112,7 @@ pub fn resolve_desktop_commander_spawn_spec(
         ));
     };
 
-    let bin_path = pkg_dir.join(bin_rel);
+    let bin_path = strip_unc_prefix(&pkg_dir.join(bin_rel));
     if !bin_path.exists() {
         return Err(WorkerClientError::pre_dispatch(format!(
             "desktop-commander bin does not exist: {}",
@@ -107,10 +120,25 @@ pub fn resolve_desktop_commander_spawn_spec(
         )));
     }
 
-    // Resolve node executable: check env or default to "node"
-    let node_cmd = std::env::var("NODE_PATH")
+    // Resolve node executable: check DCM_WORKER_COMMAND, NODE_EXE, or default to "node"
+    let node_cmd = std::env::var("DCM_WORKER_COMMAND")
         .map(PathBuf::from)
+        .or_else(|_| std::env::var("NODE_EXE").map(PathBuf::from))
         .unwrap_or_else(|_| PathBuf::from("node"));
+
+    let args = if let Ok(args_json) = std::env::var("DCM_WORKER_ARGS") {
+        serde_json::from_str::<Vec<String>>(&args_json).unwrap_or_else(|_| {
+            vec![
+                bin_path.to_string_lossy().to_string(),
+                "--no-onboarding".into(),
+            ]
+        })
+    } else {
+        vec![
+            bin_path.to_string_lossy().to_string(),
+            "--no-onboarding".into(),
+        ]
+    };
 
     let mut env = HashMap::new();
     // Copy parent environment
@@ -134,10 +162,7 @@ pub fn resolve_desktop_commander_spawn_spec(
     Ok(WorkerLaunchConfig {
         worker_id: worker_id.to_string(),
         command: node_cmd,
-        args: vec![
-            bin_path.to_string_lossy().to_string(),
-            "--no-onboarding".into(),
-        ],
+        args,
         env,
         runtime_dir: root,
     })
