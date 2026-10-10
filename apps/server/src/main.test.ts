@@ -32,18 +32,18 @@ describe('startManager', () => {
     db.workers.upsertWorker({ id: 'worker-1', name: 'worker-1', enabled: true, status: 'READY', pid: 999, failureCount: 0, lastHeartbeatAt: null, createdAt: '2026-09-29T00:00:00.000Z', updatedAt: '2026-09-29T00:00:00.000Z' }); db.close()
     const processes = new FakeProcesses(); const clients = new FakeWorkerClients()
     const runtime = await startManager({ databasePath: dbPath, runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: processes, workerClientFactory: clients })
-    expect(runtime.database.workers.listWorkers()).toHaveLength(1)
-    expect(runtime.database.workers.getWorker('worker-1')).toMatchObject({ status: 'READY', pid: 500 })
+    expect(await runtime.state.listWorkers()).toHaveLength(1)
+    expect(await runtime.state.getWorker('worker-1')).toMatchObject({ status: 'READY', pid: 500 })
     await runtime.close(); expect(processes.stopped).toEqual([500])
 
     const runtime2 = await startManager({ databasePath: dbPath, runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: new FakeProcesses(), workerClientFactory: new FakeWorkerClients() })
-    expect(runtime2.database.workers.listWorkers()).toHaveLength(1); await runtime2.close()
+    expect(await runtime2.state.listWorkers()).toHaveLength(1); await runtime2.close()
   })
 
   it('seeds two default workers for a fresh database', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
     const runtime = await startManager({ databasePath: join(root, 'manager.db'), runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: new FakeProcesses(), workerClientFactory: new FakeWorkerClients() })
-    expect(runtime.database.workers.listWorkers().map((w) => w.id)).toEqual(['worker-1', 'worker-2']); await runtime.close()
+    expect((await runtime.state.listWorkers()).map((w) => w.id)).toEqual(['worker-1', 'worker-2']); await runtime.close()
   })
 
   it('marks a worker degraded and stops its process when MCP handshake fails', async () => {
@@ -51,8 +51,8 @@ describe('startManager', () => {
     const clients = new FakeWorkerClients(); clients.failWorkerId = 'worker-2'
     const processes = new FakeProcesses()
     const runtime = await startManager({ databasePath: join(root, 'manager.db'), runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: processes, workerClientFactory: clients })
-    expect(runtime.database.workers.getWorker('worker-1')?.status).toBe('READY')
-    expect(runtime.database.workers.getWorker('worker-2')?.status).toBe('DEGRADED')
+    expect((await runtime.state.getWorker('worker-1'))?.status).toBe('READY')
+    expect((await runtime.state.getWorker('worker-2'))?.status).toBe('DEGRADED')
     expect(processes.stopped).toContain(501)
     await runtime.close()
   })

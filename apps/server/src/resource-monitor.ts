@@ -187,7 +187,7 @@ export function createNativeResourceCollector(client: NativeSidecarClient): Reso
 }
 
 export function createResourceMonitor(
-  getWorkers: () => WorkerPid[],
+  getWorkers: () => WorkerPid[] | Promise<WorkerPid[]>,
   options: ResourceMonitorOptions = {},
 ): ResourceMonitor {
   const previousCpu = new Map<string, number>()
@@ -204,7 +204,7 @@ export function createResourceMonitor(
       const now = Date.now()
       const elapsedSeconds = Math.max((now - previousAt) / 1000, 0.001)
       const logicalProcessors = Math.max(cpus().length, 1)
-      const workers = getWorkers()
+      const workers = await getWorkers()
       const workerPids = workers.flatMap((worker) => worker.pid ? [worker.pid] : [])
 
       try {

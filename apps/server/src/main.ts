@@ -23,6 +23,10 @@ import {
   createResourceMonitor,
 } from './resource-monitor.js'
 import { DEFAULT_MANAGEMENT_PORT, DEFAULT_MCP_PORT, type ManagerConfig } from './config.js'
+import type { ManagerStateProvider } from './manager-state.js'
+import { NodeManagerStateProvider } from './node-manager-state.js'
+import type { McpProxyBackend } from './mcp-proxy-backend.js'
+import { NodeMcpProxyBackend } from './node-mcp-proxy-backend.js'
 
 interface WorkerClientFactory {
   connect(handle: WorkerProcessHandle, workerId: string): Promise<ProxyWorkerClient>
@@ -35,7 +39,8 @@ type Overrides = {
 }
 
 export interface ManagerRuntime {
-  database: ManagerDatabase
+  state: ManagerStateProvider
+  database?: ManagerDatabase
   mcpUrl: string
   managementUrl: string
   close(): Promise<void>
@@ -286,17 +291,21 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     }
   }
 
+  const state = new NodeManagerStateProvider(database)
   const sessionRouter = new SessionRouter({ database, workerManager: routableWorkers })
   const retryPolicy = new RetryPolicy()
+  const proxyBackend = new NodeMcpProxyBackend(sessionRouter, retryPolicy, (workerId) => {
+    const client = clients.get(workerId)
+    if (!client) throw new UpstreamCallError('PRE_DISPATCH', `Worker client is not connected: ${workerId}`)
+    return client
+  })
+
   const mcpRuntime = await createMcpHttpServer({
-    host: '127.0.0.1', port: config.mcpPort ?? DEFAULT_MCP_PORT, sessionRouter, retryPolicy,
-    getWorkerClient(workerId) {
-      const client = clients.get(workerId)
-      if (!client) throw new UpstreamCallError('PRE_DISPATCH', `Worker client is not connected: ${workerId}`)
-      return client
-    },
+    host: '127.0.0.1',
+    port: config.mcpPort ?? DEFAULT_MCP_PORT,
+    proxyBackend,
     onToolCall(audit) {
-      database.events.appendEvent({
+      state.appendEvent({
         sessionId: audit.sessionId,
         workerId: audit.workerId,
         type: 'TOOL_CALL',
@@ -310,6 +319,8 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
           ...(audit.error ? { error: audit.error } : {}),
         }),
         createdAt: new Date().toISOString(),
+      }).catch((auditErr) => {
+        console.warn('[onToolCall] Failed to append tool call audit event:', auditErr)
       })
     },
   })
@@ -326,6 +337,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
   const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
   const dashboardDir = config.dashboardDir ?? (existsSync(defaultDashboardDir) ? defaultDashboardDir : undefined)
   const managementRuntime = await createManagementApi({
+    state,
     database,
     actions,
     connectionInfo: {
@@ -340,7 +352,10 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
   let closed = false
 
   return {
-    database, mcpUrl: mcpRuntime.url, managementUrl: managementRuntime.url,
+    state,
+    database,
+    mcpUrl: mcpRuntime.url,
+    managementUrl: managementRuntime.url,
     async close() {
       if (closed) return
       closed = true
