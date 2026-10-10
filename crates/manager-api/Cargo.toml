@@ -20,4 +20,5 @@ manager-protocol = { path = "../manager-protocol" }
 manager-worker = { path = "../manager-worker" }
 
 [dev-dependencies]
+http-body-util = { workspace = true }
 tempfile = { workspace = true }
