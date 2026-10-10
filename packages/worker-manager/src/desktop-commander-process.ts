@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { join, resolve, win32 } from "node:path";
 import { PassThrough, type Readable, type Writable } from "node:stream";
 import { resolveDesktopCommanderSpawnSpec } from "./desktop-commander-package.js";
 
@@ -17,7 +17,7 @@ export function desktopCommanderSpawnSpec(
   if (platform === "win32") {
     const systemRoot = env.SystemRoot ?? "C:\\Windows";
     const command =
-      env.ComSpec ?? env.COMSPEC ?? join(systemRoot, "System32", "cmd.exe");
+      env.ComSpec ?? env.COMSPEC ?? win32.join(systemRoot, "System32", "cmd.exe");
     return {
       command,
       args: ["/d", "/s", "/c", "npx", ...DESKTOP_COMMANDER_ARGS],
@@ -33,7 +33,7 @@ export function processTreeKillSpec(
   if (platform !== "win32") return undefined;
   const systemRoot = env.SystemRoot ?? "C:\\Windows";
   return {
-    command: join(systemRoot, "System32", "taskkill.exe"),
+    command: win32.join(systemRoot, "System32", "taskkill.exe"),
     args: ["/PID", String(pid), "/T", "/F"],
   };
 }

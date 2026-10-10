@@ -22,6 +22,20 @@ describe("desktopCommanderSpawnSpec", () => {
         "--no-onboarding",
       ],
     });
+    expect(
+      desktopCommanderSpawnSpec("win32", { SystemRoot: "C:\\Windows" }),
+    ).toEqual({
+      command: "C:\\Windows\\System32\\cmd.exe",
+      args: [
+        "/d",
+        "/s",
+        "/c",
+        "npx",
+        "-y",
+        "@wonderwhy-er/desktop-commander@latest",
+        "--no-onboarding",
+      ],
+    });
   });
 
   it("kills the full worker process tree on Windows", () => {

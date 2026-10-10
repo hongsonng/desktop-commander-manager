@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   resolveDesktopCommanderPackage,
   resolveDesktopCommanderSpawnSpec,
@@ -24,8 +26,13 @@ describe('desktop-commander package resolution', () => {
   })
 
   it('throws an actionable error when package is not found in an empty directory', () => {
-    expect(() => resolveDesktopCommanderPackage('C:\\empty-test-dir-12345')).toThrow(
-      /Could not resolve @wonderwhy-er\/desktop-commander package/i,
-    )
+    const emptyDirectory = mkdtempSync(join(tmpdir(), 'dcm-empty-package-'))
+    try {
+      expect(() => resolveDesktopCommanderPackage(emptyDirectory)).toThrow(
+        /Could not resolve @wonderwhy-er\/desktop-commander package/i,
+      )
+    } finally {
+      rmSync(emptyDirectory, { recursive: true, force: true })
+    }
   })
 })
