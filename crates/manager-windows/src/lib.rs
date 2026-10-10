@@ -75,7 +75,7 @@ impl manager_platform::ProcessPlatform for WindowsProcessPlatform {
         &self,
         _request: &manager_platform::ProcessSnapshotRequest,
     ) -> Result<manager_platform::ProcessSnapshotResult, manager_platform::PlatformError> {
-        Err(manager_platform::PlatformError::SnapshotFailed(
+        Err(manager_platform::PlatformError::Internal(
             "WindowsProcessPlatform is only supported on Windows".into(),
         ))
     }
@@ -84,7 +84,7 @@ impl manager_platform::ProcessPlatform for WindowsProcessPlatform {
         &self,
         _pid: u32,
     ) -> Result<Option<manager_platform::ProcessIdentity>, manager_platform::PlatformError> {
-        Err(manager_platform::PlatformError::IdentityFailed(
+        Err(manager_platform::PlatformError::Internal(
             "WindowsProcessPlatform is only supported on Windows".into(),
         ))
     }
@@ -93,7 +93,7 @@ impl manager_platform::ProcessPlatform for WindowsProcessPlatform {
         &self,
         _request: &manager_platform::KillProcessTreeRequest,
     ) -> Result<manager_platform::KillTreeResult, manager_platform::PlatformError> {
-        Err(manager_platform::PlatformError::KillFailed(
+        Err(manager_platform::PlatformError::Internal(
             "WindowsProcessPlatform is only supported on Windows".into(),
         ))
     }
