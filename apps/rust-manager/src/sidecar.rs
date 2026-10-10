@@ -1,7 +1,7 @@
 use manager_platform::ProcessPlatform;
 use manager_protocol::{
-    SidecarEnvelope, SidecarError, SidecarEventEnvelope, SidecarMessage, SidecarReply,
-    SidecarRequest, SidecarResult, UpstreamFailureKind, WorkerHandleResult,
+    ManagementStartResult, SidecarEnvelope, SidecarError, SidecarEventEnvelope, SidecarMessage,
+    SidecarReply, SidecarRequest, SidecarResult, UpstreamFailureKind, WorkerHandleResult,
 };
 use manager_windows::ownership_mutex::{
     WindowsSupervisorOwnershipGuard, DEFAULT_SUPERVISOR_MUTEX_NAME,
@@ -20,6 +20,7 @@ pub async fn run_sidecar() -> io::Result<()> {
     let platform: Arc<dyn ProcessPlatform> = Arc::new(WindowsProcessPlatform);
     let mut supervisor: Option<WorkerSupervisor> = None;
     let mut backend: Option<crate::backend::ManagerBackend> = None;
+    let management_server = Arc::new(crate::management_server::ManagementServerManager::new());
 
     let (stdout_tx, mut stdout_rx) = mpsc::channel::<String>(256);
 
@@ -48,6 +49,7 @@ pub async fn run_sidecar() -> io::Result<()> {
                     &platform,
                     &mut supervisor,
                     &mut backend,
+                    &management_server,
                     envelope,
                     &stdout_tx,
                 )
@@ -156,6 +158,7 @@ async fn handle_envelope(
     platform: &Arc<dyn ProcessPlatform>,
     supervisor: &mut Option<WorkerSupervisor>,
     backend: &mut Option<crate::backend::ManagerBackend>,
+    management_server: &crate::management_server::ManagementServerManager,
     envelope: SidecarEnvelope,
     stdout_tx: &mpsc::Sender<String>,
 ) -> SidecarReply {
@@ -438,6 +441,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::BackendClose(_) => {
+            management_server.stop().await;
             if let Some(b) = backend.take() {
                 let _ = b.close().await;
             }
@@ -644,6 +648,115 @@ async fn handle_envelope(
                     result: None,
                     error: Some(e),
                 },
+            }
+        }
+        SidecarRequest::StateSetWorkerEnabled(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    };
+                }
+            };
+            match b.set_worker_enabled(&req.worker_id, req.enabled).await {
+                Ok(worker) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::StateGetWorker(
+                        manager_protocol::StateGetWorkerResult { worker },
+                    )),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
+        SidecarRequest::ManagementStart(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    };
+                }
+            };
+
+            let mut api_state = manager_api::state::ApiState::new(b.db().clone());
+            api_state.connection_info = manager_api::dto::ConnectionInfo {
+                mode: "direct-local".to_string(),
+                mcp_url: req
+                    .mcp_url
+                    .unwrap_or_else(|| "http://127.0.0.1:8787/mcp".to_string()),
+                worker_strategy: "sticky-failover".to_string(),
+            };
+            api_state.dashboard_dir = req.dashboard_dir.map(PathBuf::from);
+            api_state.actions = Some(Arc::new(
+                crate::management_server::BackendWorkerActions::new(
+                    b.supervisor_arc(),
+                    b.db().clone(),
+                ),
+            ));
+            let manager_pid = std::process::id();
+            api_state.resource_provider = Some(Arc::new(
+                crate::management_server::PlatformResourceProvider::new(
+                    Arc::clone(platform),
+                    b.db().clone(),
+                    manager_pid,
+                ),
+            ));
+
+            match management_server
+                .start(&req.host, req.port, api_state)
+                .await
+            {
+                Ok(url) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::ManagementStart(ManagementStartResult {
+                        url,
+                    })),
+                    error: None,
+                },
+                Err(crate::management_server::ManagementServerError::AlreadyRunning) => {
+                    SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "MANAGEMENT_ALREADY_RUNNING",
+                            "Management server is already running",
+                        )),
+                    }
+                }
+                Err(crate::management_server::ManagementServerError::Bind(h, p, e)) => {
+                    SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "MANAGEMENT_BIND_FAILED",
+                            format!("Failed to bind management server on {}:{}: {}", h, p, e),
+                        )),
+                    }
+                }
+            }
+        }
+        SidecarRequest::ManagementStop(_) => {
+            management_server.stop().await;
+            SidecarReply {
+                id: envelope.id,
+                result: Some(SidecarResult::Empty(serde_json::json!({ "stopped": true }))),
+                error: None,
             }
         }
     }

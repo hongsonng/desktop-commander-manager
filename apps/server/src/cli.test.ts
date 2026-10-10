@@ -14,6 +14,7 @@ describe('CLI defaults', () => {
       platformOwner: 'rust',
       workerOwner: 'node',
       stateOwner: 'node',
+      managementApiOwner: 'node',
       nativeSidecarPath: join(root, 'target', 'release', 'dcm-manager.exe'),
     })
   })
@@ -37,7 +38,15 @@ describe('CLI defaults', () => {
     expect(() => cli.parseStateOwner('invalid')).toThrow(/Invalid DCM_STATE_OWNER/i)
   })
 
-  it('validates config: rejects stateOwner=rust with workerOwner=node or missing sidecar', () => {
+  it('parses management API owner from environment and validates values', () => {
+    expect(cli.parseManagementApiOwner(undefined)).toBe('node')
+    expect(cli.parseManagementApiOwner('node')).toBe('node')
+    expect(cli.parseManagementApiOwner('rust')).toBe('rust')
+    expect(cli.parseManagementApiOwner('  RUST  ')).toBe('rust')
+    expect(() => cli.parseManagementApiOwner('invalid')).toThrow(/Invalid DCM_MANAGEMENT_API_OWNER/i)
+  })
+
+  it('validates config: rejects invalid stateOwner or managementApiOwner combinations', () => {
     expect(() => {
       cli.validateManagerConfig({
         databasePath: 'test.db',
@@ -51,8 +60,29 @@ describe('CLI defaults', () => {
       cli.validateManagerConfig({
         databasePath: 'test.db',
         runtimeRoot: 'workers',
+        stateOwner: 'node',
+        workerOwner: 'rust',
+        managementApiOwner: 'rust',
+      })
+    }).toThrow(/managementApiOwner="rust" requires stateOwner="rust"/i)
+
+    expect(() => {
+      cli.validateManagerConfig({
+        databasePath: 'test.db',
+        runtimeRoot: 'workers',
+        stateOwner: 'rust',
+        workerOwner: 'node',
+        managementApiOwner: 'rust',
+      })
+    }).toThrow(/requires workerOwner="rust"/i)
+
+    expect(() => {
+      cli.validateManagerConfig({
+        databasePath: 'test.db',
+        runtimeRoot: 'workers',
         stateOwner: 'rust',
         workerOwner: 'rust',
+        managementApiOwner: 'rust',
         nativeSidecarPath: 'C:\\nonexistent\\dcm.exe',
       })
     }).toThrow(/Native sidecar executable not found/i)

@@ -172,4 +172,82 @@ describe('startManager', () => {
     await runtime.close()
     expect(closed).toBe(true)
   })
+
+  it('rejects managementApiOwner="rust" when stateOwner or workerOwner is not "rust"', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    await expect(
+      startManager({
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        managementApiOwner: 'rust',
+        stateOwner: 'node',
+        workerOwner: 'rust',
+      }),
+    ).rejects.toThrow(/managementApiOwner="rust" requires stateOwner="rust"/i)
+
+    await expect(
+      startManager({
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        managementApiOwner: 'rust',
+        stateOwner: 'rust',
+        workerOwner: 'node',
+      }),
+    ).rejects.toThrow(/managementApiOwner="rust" requires workerOwner="rust"|stateOwner="rust" requires workerOwner="rust"/i)
+  })
+
+  it('initializes with managementApiOwner="rust", delegating dashboard API to sidecar listener', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    let mgmtStarted = false
+    let mgmtStopped = false
+    let capturedOptions: any = null
+
+    const fakeSidecar = {
+      backendOpen: async () => undefined,
+      backendClose: async () => undefined,
+      stateListWorkers: async () => [],
+      stateGetWorker: async () => undefined,
+      stateListSessions: async () => [],
+      stateListEvents: async () => [],
+      proxyListTools: async () => ({ workerId: 'worker-1', result: { tools: [] } }),
+      proxyCallTool: async () => ({ workerId: 'worker-1', failedOver: false, result: { content: [] } }),
+      managementStart: async (options: any) => {
+        mgmtStarted = true
+        capturedOptions = options
+        return { url: 'http://127.0.0.1:9999' }
+      },
+      managementStop: async () => {
+        mgmtStopped = true
+      },
+      close: async () => undefined,
+    } as any
+
+    const runtime = await startManager(
+      {
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        stateOwner: 'rust',
+        workerOwner: 'rust',
+        managementApiOwner: 'rust',
+      },
+      {
+        sidecarClient: fakeSidecar,
+      },
+    )
+
+    expect(mgmtStarted).toBe(true)
+    expect(capturedOptions.host).toBe('127.0.0.1')
+    expect(capturedOptions.port).toBe(0)
+    expect(capturedOptions.mcpUrl).toBeTruthy()
+    expect(runtime.managementUrl).toBe('http://127.0.0.1:9999')
+
+    await runtime.close()
+    expect(mgmtStopped).toBe(true)
+  })
 })

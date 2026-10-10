@@ -58,6 +58,14 @@ impl ManagerBackend {
     pub fn supervisor(&self) -> &WorkerSupervisor {
         &self.supervisor
     }
+
+    pub fn supervisor_arc(&self) -> Arc<WorkerSupervisor> {
+        self.supervisor.clone()
+    }
+
+    pub fn db(&self) -> &Arc<Mutex<ManagerDb>> {
+        &self.db
+    }
     pub async fn open(
         database_path: &Path,
         runtime_root: &Path,
@@ -413,6 +421,31 @@ impl ManagerBackend {
         db.events()
             .append(&event)
             .map_err(|e| SidecarError::new("DB_ERROR", e.to_string()))
+    }
+
+    pub async fn set_worker_enabled(
+        &self,
+        worker_id: &str,
+        enabled: bool,
+    ) -> Result<Option<WorkerRecord>, SidecarError> {
+        let db = self.db.lock().await;
+        let worker_repo = db.workers();
+        if let Some(mut w) = worker_repo
+            .get(worker_id)
+            .map_err(|e| SidecarError::new("DB_ERROR", e.to_string()))?
+        {
+            w.enabled = enabled;
+            if !enabled {
+                w.status = WorkerStatus::Disabled;
+                w.pid = None;
+            }
+            worker_repo
+                .upsert(&w)
+                .map_err(|e| SidecarError::new("DB_ERROR", e.to_string()))?;
+            Ok(Some(w))
+        } else {
+            Ok(None)
+        }
     }
 
     pub async fn close(&self) -> Result<(), SidecarError> {

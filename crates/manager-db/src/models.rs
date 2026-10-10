@@ -120,7 +120,12 @@ pub struct EventInput {
     pub event_type: String,
     pub message: String,
     pub metadata_json: Option<String>,
+    #[serde(default = "default_now")]
     pub created_at: String,
+}
+
+fn default_now() -> String {
+    Utc::now().to_rfc3339()
 }
 
 impl EventInput {

@@ -75,6 +75,15 @@ pub enum SidecarRequest {
 
     #[serde(rename = "state/appendEvent")]
     StateAppendEvent(StateAppendEventRequest),
+
+    #[serde(rename = "state/setWorkerEnabled")]
+    StateSetWorkerEnabled(StateSetWorkerEnabledRequest),
+
+    #[serde(rename = "management/start")]
+    ManagementStart(ManagementStartRequest),
+
+    #[serde(rename = "management/stop")]
+    ManagementStop(ManagementStopRequest),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -131,6 +140,13 @@ pub struct StateListEventsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct StateAppendEventRequest {
     pub event: EventInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateSetWorkerEnabledRequest {
+    pub worker_id: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -255,7 +271,39 @@ pub enum SidecarResult {
     StateListSessions(StateListSessionsResult),
     StateListEvents(StateListEventsResult),
     StateAppendEvent(StateAppendEventResult),
+    ManagementStart(ManagementStartResult),
     Empty(serde_json::Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagementStartRequest {
+    #[serde(default = "default_management_host")]
+    pub host: String,
+    #[serde(default = "default_management_port")]
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dashboard_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_url: Option<String>,
+}
+
+fn default_management_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_management_port() -> u16 {
+    8788
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagementStopRequest {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagementStartResult {
+    pub url: String,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
