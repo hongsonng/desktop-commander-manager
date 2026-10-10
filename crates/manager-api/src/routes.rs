@@ -1,8 +1,9 @@
+use crate::actions::{disable_worker, enable_worker, restart_worker};
 use crate::dto::*;
 use crate::state::{ApiState, DefaultResourceProvider, ResourceProvider};
 use axum::extract::State;
 use axum::http::StatusCode;
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::Value;
 
@@ -11,6 +12,9 @@ pub fn create_router(state: ApiState) -> Router {
         .route("/api/health", get(health_handler))
         .route("/api/connection", get(connection_handler))
         .route("/api/workers", get(workers_handler))
+        .route("/api/workers/{id}/restart", post(restart_worker))
+        .route("/api/workers/{id}/enable", post(enable_worker))
+        .route("/api/workers/{id}/disable", post(disable_worker))
         .route("/api/resources", get(resources_handler))
         .route("/api/sessions", get(sessions_handler))
         .route("/api/events", get(events_handler))
