@@ -36,10 +36,10 @@ pub fn run_sidecar() -> io::Result<()> {
                 SidecarReply {
                     id,
                     result: None,
-                    error: Some(SidecarError {
-                        code: "MALFORMED_REQUEST".to_string(),
-                        message: format!("Failed to parse request: {}", err),
-                    }),
+                    error: Some(SidecarError::new(
+                        "MALFORMED_REQUEST",
+                        format!("Failed to parse request: {}", err),
+                    )),
                 }
             }
         };
@@ -65,10 +65,7 @@ fn handle_envelope(platform: &WindowsProcessPlatform, envelope: SidecarEnvelope)
             Err(err) => SidecarReply {
                 id: envelope.id,
                 result: None,
-                error: Some(SidecarError {
-                    code: "PLATFORM_ERROR".to_string(),
-                    message: err.to_string(),
-                }),
+                error: Some(SidecarError::new("PLATFORM_ERROR", err.to_string())),
             },
         },
         SidecarRequest::ProcessIdentity(req) => match platform.identity(req.pid) {
@@ -80,10 +77,7 @@ fn handle_envelope(platform: &WindowsProcessPlatform, envelope: SidecarEnvelope)
             Err(err) => SidecarReply {
                 id: envelope.id,
                 result: None,
-                error: Some(SidecarError {
-                    code: "PLATFORM_ERROR".to_string(),
-                    message: err.to_string(),
-                }),
+                error: Some(SidecarError::new("PLATFORM_ERROR", err.to_string())),
             },
         },
         SidecarRequest::KillProcessTree(req) => match platform.kill_tree(&req) {
@@ -95,11 +89,21 @@ fn handle_envelope(platform: &WindowsProcessPlatform, envelope: SidecarEnvelope)
             Err(err) => SidecarReply {
                 id: envelope.id,
                 result: None,
-                error: Some(SidecarError {
-                    code: "PLATFORM_ERROR".to_string(),
-                    message: err.to_string(),
-                }),
+                error: Some(SidecarError::new("PLATFORM_ERROR", err.to_string())),
             },
+        },
+        SidecarRequest::WorkerStart(_)
+        | SidecarRequest::WorkerStop(_)
+        | SidecarRequest::WorkerRestart(_)
+        | SidecarRequest::WorkerListTools(_)
+        | SidecarRequest::WorkerCallTool(_)
+        | SidecarRequest::WorkerShutdownAll(_) => SidecarReply {
+            id: envelope.id,
+            result: None,
+            error: Some(SidecarError::new(
+                "NOT_IMPLEMENTED",
+                "Worker runtime not yet integrated in sidecar",
+            )),
         },
     }
 }
