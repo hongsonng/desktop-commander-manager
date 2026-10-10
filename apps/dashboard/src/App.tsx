@@ -27,6 +27,7 @@ type ActivityFilter = "ALL" | "READ" | "WRITE" | "COMMAND" | "ERROR";
 type DetailTab = "sessions" | "events";
 type Theme = "dark" | "light";
 type ConnectionState = "live" | "partial" | "stale" | "offline" | "connecting";
+type WorkerDataState = "loading" | "available" | "unavailable";
 
 const POLL_INTERVAL_MS = 2000;
 const STALE_AFTER_MS = 6500;
@@ -246,6 +247,8 @@ export function App() {
     null,
   );
   const [workers, setWorkers] = useState<WorkerView[]>([]);
+  const [workerDataState, setWorkerDataState] =
+    useState<WorkerDataState>("loading");
   const [resources, setResources] = useState<ResourceUsageView | null>(null);
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [events, setEvents] = useState<EventView[]>([]);
@@ -307,8 +310,12 @@ export function App() {
     } else failures.push(`connection: ${failureMessage(connectionResult)}`);
     if (workersResult.status === "fulfilled") {
       setWorkers(workersResult.value);
+      setWorkerDataState("available");
       successfulSources += 1;
-    } else failures.push(`workers: ${failureMessage(workersResult)}`);
+    } else {
+      setWorkerDataState("unavailable");
+      failures.push(`workers: ${failureMessage(workersResult)}`);
+    }
     if (resourcesResult.status === "fulfilled") {
       setResources(resourcesResult.value);
       successfulSources += 1;
@@ -365,9 +372,17 @@ export function App() {
     window.history.replaceState(
       {},
       "",
-      `${window.location.pathname}${query ? `?${query}` : ""}`,
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
     );
   }, [activityFilter, workerFilter, searchQuery, detailTab]);
+
+  useEffect(() => {
+    const updateActiveSection = () => {
+      setActiveSection(window.location.hash.slice(1) || "overview");
+    };
+    window.addEventListener("hashchange", updateActiveSection);
+    return () => window.removeEventListener("hashchange", updateActiveSection);
+  }, []);
 
   useEffect(() => {
     if (!selectedCall) return;
@@ -564,12 +579,12 @@ export function App() {
         <div className="activity-signal">
           <div className="signal-topline">
             <div>
-              <span className="signal-label">RECENT TOOL CALLS</span>
-              <div className="signal-value">{recentHourCalls.length}<small> / last hour</small></div>
+              <span className="signal-label">RECENT TOOL CALL SAMPLE</span>
+              <div className="signal-value">{recentHourCalls.length}<small> / latest snapshot</small></div>
             </div>
             <span className={`signal-indicator${connectionState === "live" ? "" : " is-limited"}`}><span /> {connectionState === "live" ? "LIVE METRICS" : `${connectionLabel} DATA`}</span>
           </div>
-          <div className="signal-chart" role="img" aria-label={`${recentHourCalls.length} ${recentHourCalls.length === 1 ? "tool call" : "tool calls"} in the past hour from the latest snapshot, ${recentHourErrors} ${recentHourErrors === 1 ? "error" : "errors"}`}>
+          <div className="signal-chart" role="img" aria-label={`${recentHourCalls.length} ${recentHourCalls.length === 1 ? "tool call" : "tool calls"} within the past hour in the latest ${toolCalls.length}-call snapshot, ${recentHourErrors} ${recentHourErrors === 1 ? "error" : "errors"}`}>
             {timeline.map((count, index) => (
               <span className="signal-bar-slot" key={index}>
                 <span
@@ -580,7 +595,7 @@ export function App() {
             ))}
           </div>
           <div className="signal-axis">
-            <span>60 MIN AGO</span>
+            <span>LATEST {toolCalls.length} {toolCalls.length === 1 ? "CALL" : "CALLS"}</span>
             <span>{recentHourErrors} ERRORS</span>
             <span>NOW</span>
           </div>
@@ -802,7 +817,19 @@ export function App() {
             </span>
           </div>
           <div className="worker-list">
-            {workers.length === 0 && (
+            {workers.length === 0 && workerDataState === "loading" && (
+              <div className="empty-state worker-empty">
+                <strong>Loading workers</strong>
+                <span>Waiting for the first manager snapshot.</span>
+              </div>
+            )}
+            {workers.length === 0 && workerDataState === "unavailable" && (
+              <div className="empty-state worker-empty">
+                <strong>Worker data unavailable</strong>
+                <span>Retry after the manager can report worker details.</span>
+              </div>
+            )}
+            {workers.length === 0 && workerDataState === "available" && (
               <div className="empty-state worker-empty">
                 <strong>No workers available</strong>
                 <span>Worker details will appear here when the manager reports them.</span>

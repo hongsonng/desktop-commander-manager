@@ -2,6 +2,7 @@ use manager_platform::SupervisorOwnershipGuard;
 use manager_worker::{SupervisorError, WorkerLaunchConfig, WorkerState, WorkerSupervisor};
 use serde_json::json;
 use std::collections::HashMap;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -212,4 +213,85 @@ async fn test_supervisor_crash_and_automatic_recovery() {
 
     // Clean up
     supervisor.stop_worker("worker-crash").await.expect("stop");
+}
+
+#[tokio::test]
+async fn test_handshake_timeout_stops_old_process_before_starting_replacement() {
+    let script = r#"
+        const fs = require('fs');
+        const readline = require('readline');
+        const marker = process.env.DCM_TEST_HANDSHAKE_MARKER;
+        const spawnLog = process.env.DCM_TEST_SPAWN_LOG;
+        fs.appendFileSync(spawnLog, process.pid + '\n');
+        const firstPid = fs.existsSync(marker) ? Number(fs.readFileSync(marker, 'utf8')) : null;
+        if (firstPid === null) fs.writeFileSync(marker, String(process.pid));
+        const rl = readline.createInterface({ input: process.stdin, terminal: false });
+        rl.on('line', (line) => {
+            const req = JSON.parse(line);
+            if (req.method !== 'initialize') return;
+            if (firstPid !== null) {
+                let oldProcessAlive = false;
+                try {
+                    process.kill(firstPid, 0);
+                    oldProcessAlive = true;
+                } catch {}
+                fs.appendFileSync(spawnLog, 'overlap=' + oldProcessAlive + '\n');
+                console.log(JSON.stringify({
+                    jsonrpc: '2.0',
+                    id: req.id,
+                    result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'test' } }
+                }));
+            }
+        });
+    "#;
+
+    let mut cfg = create_mock_config("worker-handshake", script, "handshake-replacement");
+    let marker = cfg.runtime_dir.join("failed-once.marker");
+    let spawn_log = cfg.runtime_dir.join("spawn.log");
+    cfg.env.insert(
+        "DCM_TEST_HANDSHAKE_MARKER".into(),
+        marker.to_string_lossy().into_owned(),
+    );
+    cfg.env.insert(
+        "DCM_TEST_SPAWN_LOG".into(),
+        spawn_log.to_string_lossy().into_owned(),
+    );
+
+    let supervisor = WorkerSupervisor::new(vec![cfg], None, None).expect("supervisor");
+    assert!(supervisor
+        .start_worker_internal("worker-handshake", Duration::from_millis(100))
+        .await
+        .is_err());
+
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while tokio::time::Instant::now() < deadline {
+        if supervisor.get_worker_state("worker-handshake").await == Some(WorkerState::Ready) {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(25)).await;
+    }
+
+    assert_eq!(
+        supervisor.get_worker_state("worker-handshake").await,
+        Some(WorkerState::Ready)
+    );
+    let spawned = fs::read_to_string(&spawn_log).expect("spawn log");
+    let old_process_overlapped = spawned.lines().any(|line| line == "overlap=true");
+    assert_eq!(
+        spawned
+            .lines()
+            .filter(|line| !line.starts_with("overlap="))
+            .count(),
+        2,
+        "exactly one replacement should start"
+    );
+
+    supervisor
+        .stop_worker("worker-handshake")
+        .await
+        .expect("stop");
+    assert!(
+        !old_process_overlapped,
+        "replacement started before the timed-out worker exited"
+    );
 }
