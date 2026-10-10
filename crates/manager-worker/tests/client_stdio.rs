@@ -123,7 +123,7 @@ async fn test_client_error_classifications() {
     "#;
 
     let config = create_mock_config(script, "error-classifications");
-    let mut client = WorkerClient::spawn(config, None)
+    let client = WorkerClient::spawn(config, None)
         .await
         .expect("spawn client");
 

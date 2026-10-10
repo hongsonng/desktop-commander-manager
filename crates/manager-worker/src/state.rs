@@ -12,6 +12,20 @@ pub enum WorkerState {
     Disabled,
 }
 
+impl std::fmt::Display for WorkerState {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Stopped => write!(f, "STOPPED"),
+            Self::Starting => write!(f, "STARTING"),
+            Self::Ready => write!(f, "READY"),
+            Self::Busy => write!(f, "BUSY"),
+            Self::Degraded => write!(f, "DEGRADED"),
+            Self::Offline => write!(f, "OFFLINE"),
+            Self::Disabled => write!(f, "DISABLED"),
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum WorkerLifecycleEvent {
     StartRequested,

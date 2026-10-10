@@ -174,12 +174,14 @@ impl WorkerClient {
         *self.exit_rx.borrow()
     }
 
-    pub async fn wait_for_exit(&mut self) -> Option<i32> {
-        if let Some(code) = *self.exit_rx.borrow() {
+    pub async fn wait_for_exit(&self) -> Option<i32> {
+        let mut rx = self.exit_rx.clone();
+        if let Some(code) = *rx.borrow() {
             return Some(code);
         }
-        let _ = self.exit_rx.changed().await;
-        *self.exit_rx.borrow()
+        let _ = rx.changed().await;
+        let code = *rx.borrow();
+        code
     }
 
     pub async fn send_request(
