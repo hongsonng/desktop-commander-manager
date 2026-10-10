@@ -1,5 +1,6 @@
 pub use dcm_manager::backend;
 pub use dcm_manager::management_server;
+pub use dcm_manager::platform;
 mod sidecar;
 
 use std::env;

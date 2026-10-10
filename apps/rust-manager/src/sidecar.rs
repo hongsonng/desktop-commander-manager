@@ -1,12 +1,11 @@
+use crate::platform::{
+    create_native_platform, NativeSupervisorOwnershipGuard, DEFAULT_SUPERVISOR_LOCK_NAME,
+};
 use manager_platform::ProcessPlatform;
 use manager_protocol::{
     ManagementStartResult, SidecarEnvelope, SidecarError, SidecarEventEnvelope, SidecarMessage,
     SidecarReply, SidecarRequest, SidecarResult, UpstreamFailureKind, WorkerHandleResult,
 };
-use manager_windows::ownership_mutex::{
-    WindowsSupervisorOwnershipGuard, DEFAULT_SUPERVISOR_MUTEX_NAME,
-};
-use manager_windows::WindowsProcessPlatform;
 use manager_worker::{resolve_desktop_commander_spawn_spec, WorkerSupervisor};
 use serde_json::Value;
 use std::io;
@@ -17,7 +16,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::sync::mpsc;
 
 pub async fn run_sidecar() -> io::Result<()> {
-    let platform: Arc<dyn ProcessPlatform> = Arc::new(WindowsProcessPlatform);
+    let platform: Arc<dyn ProcessPlatform> = create_native_platform();
     let mut supervisor: Option<WorkerSupervisor> = None;
     let mut backend: Option<crate::backend::ManagerBackend> = None;
     let management_server = Arc::new(crate::management_server::ManagementServerManager::new());
@@ -92,8 +91,8 @@ fn get_or_init_supervisor<'a>(
         let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
         let mutex_name = std::env::var("DCM_SUPERVISOR_MUTEX_NAME")
-            .unwrap_or_else(|_| DEFAULT_SUPERVISOR_MUTEX_NAME.to_string());
-        let guard = match WindowsSupervisorOwnershipGuard::acquire(&mutex_name) {
+            .unwrap_or_else(|_| DEFAULT_SUPERVISOR_LOCK_NAME.to_string());
+        let guard = match NativeSupervisorOwnershipGuard::acquire(&mutex_name) {
             Ok(g) => Box::new(g),
             Err(e) => {
                 return Err(SidecarError::with_failure_kind(
@@ -400,8 +399,8 @@ async fn handle_envelope(
         }
         SidecarRequest::BackendOpen(req) => {
             let mutex_name = std::env::var("DCM_SUPERVISOR_MUTEX_NAME")
-                .unwrap_or_else(|_| DEFAULT_SUPERVISOR_MUTEX_NAME.to_string());
-            let guard = match WindowsSupervisorOwnershipGuard::acquire(&mutex_name) {
+                .unwrap_or_else(|_| DEFAULT_SUPERVISOR_LOCK_NAME.to_string());
+            let guard = match NativeSupervisorOwnershipGuard::acquire(&mutex_name) {
                 Ok(g) => Box::new(g),
                 Err(e) => {
                     return SidecarReply {

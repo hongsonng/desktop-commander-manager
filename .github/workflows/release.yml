@@ -11,12 +11,22 @@ on:
         required: true
         default: 'v0.2.0'
 
+permissions:
+  contents: write
+
 jobs:
-  release:
-    name: Build & Publish Release
-    runs-on: windows-latest
-    permissions:
-      contents: write
+  build-and-package:
+    name: Build & Package (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: desktop-commander-manager-windows-x64.zip
+            script: pwsh scripts/package-release.ps1
+          - os: ubuntu-latest
+            artifact_name: desktop-commander-manager-linux-x64.tar.gz
+            script: bash scripts/package-release.sh
 
     steps:
       - name: Checkout repository
@@ -34,32 +44,34 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Install dependencies & Build artifacts
-        run: |
-          npm ci
-          cargo build --workspace --release
-          npm run build
+      - name: Install Node dependencies
+        run: npm ci
 
-      - name: Package Release Archive
-        shell: pwsh
-        run: |
-          $ReleaseDir = "desktop-commander-manager-windows-x64"
-          New-Item -ItemType Directory -Path $ReleaseDir -Force
-          Copy-Item -Path "target/release/dcm-manager.exe" -Destination "$ReleaseDir/"
-          Copy-Item -Path "package.json" -Destination "$ReleaseDir/"
-          Copy-Item -Path "package-lock.json" -Destination "$ReleaseDir/"
-          Copy-Item -Path "scripts" -Destination "$ReleaseDir/" -Recurse
-          Copy-Item -Path "apps" -Destination "$ReleaseDir/" -Recurse
-          Copy-Item -Path "packages" -Destination "$ReleaseDir/" -Recurse
-          Compress-Archive -Path "$ReleaseDir/*" -DestinationPath "desktop-commander-manager-windows-x64.zip" -Force
+      - name: Run packaging script
+        run: ${{ matrix.script }}
+
+      - name: Upload packaged artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: dist-release/${{ matrix.artifact_name }}
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: build-and-package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all release artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+          merge-multiple: true
 
       - name: Create GitHub Release & Upload Assets
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.event.inputs.tag || github.ref_name }}
           name: Release ${{ github.event.inputs.tag || github.ref_name }}
-          files: |
-            target/release/dcm-manager.exe
-            desktop-commander-manager-windows-x64.zip
+          files: release-artifacts/*
           draft: false
           prerelease: false
