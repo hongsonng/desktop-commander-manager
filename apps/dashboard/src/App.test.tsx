@@ -265,7 +265,7 @@ describe("dashboard", () => {
     expect(screen.getByText("LATEST 1 CALL")).toBeTruthy();
 
     const navigation = screen.getByRole("navigation", {
-      name: "Dashboard sections",
+      name: "Primary dashboard navigation",
     });
     const workerLink = within(navigation).getByRole("link", { name: "Workers" });
     expect(workerLink).toHaveClass("nav-current");
@@ -280,6 +280,31 @@ describe("dashboard", () => {
         within(navigation).getByRole("link", { name: "Resources" }),
       ).toHaveClass("nav-current");
     });
+  });
+
+  it("exposes the dashboard shell as primary navigation with the active destination", async () => {
+    render(<App />);
+
+    const navigation = await screen.findByRole("navigation", {
+      name: "Primary dashboard navigation",
+    });
+    const overviewLink = within(navigation).getByRole("link", {
+      name: "Overview",
+    });
+
+    expect(overviewLink).toHaveAttribute("aria-current", "page");
+    expect(
+      within(navigation).getByRole("link", { name: "Live activity" }),
+    ).toBeTruthy();
+    expect(
+      within(navigation).getByRole("link", { name: "Workers" }),
+    ).toBeTruthy();
+    expect(
+      within(navigation).getByRole("link", { name: "Resources" }),
+    ).toBeTruthy();
+    expect(
+      within(navigation).getByRole("link", { name: "Routing & audit" }),
+    ).toBeTruthy();
   });
 
   it("does not report an empty worker pool when the workers request fails", async () => {
