@@ -171,6 +171,12 @@ describe("dashboard", () => {
     expect(await screen.findByText("Desktop Commander Manager")).toBeTruthy();
     expect(await screen.findByText("Direct local")).toBeTruthy();
     expect(screen.getByText("http://127.0.0.1:8787/mcp")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Worker 1" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Live activity" })).toBeNull();
+    const navigation = screen.getByRole("navigation", {
+      name: "Primary dashboard navigation",
+    });
+    await user.click(within(navigation).getByRole("link", { name: "Workers" }));
     expect(
       await screen.findByRole("heading", { name: "Worker 1" }),
     ).toBeTruthy();
@@ -178,13 +184,23 @@ describe("dashboard", () => {
       .getByRole("heading", { name: "Worker 1" })
       .closest("article")!;
     expect(within(workerCard).getByText("3")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Live activity" })).toBeNull();
+    await user.click(
+      within(navigation).getByRole("link", { name: "Resources" }),
+    );
     expect(
       await screen.findByRole("heading", { name: "Resource usage" }),
     ).toBeTruthy();
-    expect(screen.getAllByText("180 MB")).toHaveLength(2);
+    expect(screen.getAllByText("180 MB")).toHaveLength(1);
     expect(screen.getAllByText(/Secure MCP Tunnel/).length).toBeGreaterThan(0);
     expect(screen.getByText("18.5%")).toBeTruthy();
+    await user.click(
+      within(navigation).getByRole("link", { name: "Routing & audit" }),
+    );
     expect(screen.getByText("chat-a")).toBeTruthy();
+    await user.click(
+      within(navigation).getByRole("link", { name: "Live activity" }),
+    );
     expect(
       await screen.findByRole("heading", { name: "Live activity" }),
     ).toBeTruthy();
@@ -194,9 +210,13 @@ describe("dashboard", () => {
     expect(screen.getByText("path=D:/repo/file.txt")).toBeTruthy();
     expect(screen.getByText("12 ms")).toBeTruthy();
 
+    await user.click(
+      within(navigation).getByRole("link", { name: "Routing & audit" }),
+    );
     await user.click(screen.getByRole("tab", { name: /Audit events/ }));
     expect(screen.getByText("SESSION_FAILOVER")).toBeTruthy();
 
+    await user.click(within(navigation).getByRole("link", { name: "Workers" }));
     await user.click(screen.getByRole("button", { name: "Restart Worker 1" }));
     await waitFor(() =>
       expect(api.workerAction).toHaveBeenCalledWith("worker-1", "restart"),
@@ -205,11 +225,13 @@ describe("dashboard", () => {
   });
 
   it("keeps successful data visible when one source fails", async () => {
+    const user = userEvent.setup();
     vi.mocked(api.getHealth).mockRejectedValueOnce(new Error("network down"));
     render(<App />);
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "health: network down",
     );
+    await user.click(screen.getByRole("link", { name: "Workers" }));
     expect(
       await screen.findByRole("heading", { name: "Worker 1" }),
     ).toBeTruthy();
@@ -219,6 +241,7 @@ describe("dashboard", () => {
   it("filters activity, persists the view in the URL, and opens call details", async () => {
     const user = userEvent.setup();
     render(<App />);
+    await user.click(screen.getByRole("link", { name: "Live activity" }));
     expect(
       await screen.findByRole("button", { name: "View details for read_file" }),
     ).toBeTruthy();
@@ -244,34 +267,46 @@ describe("dashboard", () => {
   it("labels recent activity as a snapshot sample and navigates between dashboard sections", async () => {
     const user = userEvent.setup();
     window.history.replaceState({}, "", "/?q=read#workers");
-    vi.mocked(api.getToolCalls).mockResolvedValueOnce([{
-      id: 22,
-      sessionId: "chat-a",
-      workerId: "worker-1",
-      toolName: "read_file",
-      argsSummary: "path=D:/repo/file.txt",
-      status: "ERROR",
-      durationMs: 48,
-      failedOver: false,
-      error: "read failed",
-      createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
-    }]);
+    vi.mocked(api.getToolCalls).mockResolvedValueOnce([
+      {
+        id: 22,
+        sessionId: "chat-a",
+        workerId: "worker-1",
+        toolName: "read_file",
+        argsSummary: "path=D:/repo/file.txt",
+        status: "ERROR",
+        durationMs: 48,
+        failedOver: false,
+        error: "read failed",
+        createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+      },
+    ]);
     render(<App />);
-    expect(await screen.findByRole("img", {
-      name: "1 tool call within the past hour in the latest 1-call snapshot, 1 error",
-    })).toBeTruthy();
+    const navigation = screen.getByRole("navigation", {
+      name: "Primary dashboard navigation",
+    });
+    const workerLink = within(navigation).getByRole("link", {
+      name: "Workers",
+    });
+    expect(workerLink).toHaveClass("nav-current");
+    expect(screen.queryByRole("img")).toBeNull();
+    await user.click(
+      within(navigation).getByRole("link", { name: "Overview" }),
+    );
+    expect(
+      await screen.findByRole("img", {
+        name: "1 tool call within the past hour in the latest 1-call snapshot, 1 error",
+      }),
+    ).toBeTruthy();
     expect(screen.getByText("RECENT TOOL CALL SAMPLE")).toBeTruthy();
     expect(screen.getByText("/ latest snapshot")).toBeTruthy();
     expect(screen.getByText("LATEST 1 CALL")).toBeTruthy();
 
-    const navigation = screen.getByRole("navigation", {
-      name: "Primary dashboard navigation",
-    });
-    const workerLink = within(navigation).getByRole("link", { name: "Workers" });
-    expect(workerLink).toHaveClass("nav-current");
-
+    await user.click(
+      within(navigation).getByRole("link", { name: "Live activity" }),
+    );
     await user.click(screen.getByRole("button", { name: "Write" }));
-    expect(window.location.hash).toBe("#workers");
+    expect(window.location.hash).toBe("#activity");
 
     window.location.hash = "#resources";
     window.dispatchEvent(new HashChangeEvent("hashchange"));
@@ -308,13 +343,52 @@ describe("dashboard", () => {
   });
 
   it("does not report an empty worker pool when the workers request fails", async () => {
-    vi.mocked(api.getWorkers).mockRejectedValueOnce(new Error("workers offline"));
+    const user = userEvent.setup();
+    vi.mocked(api.getWorkers).mockRejectedValueOnce(
+      new Error("workers offline"),
+    );
     render(<App />);
+    await user.click(screen.getByRole("link", { name: "Workers" }));
 
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "workers: workers offline",
     );
     expect(screen.queryByText("No workers available")).toBeNull();
     expect(screen.getByText("Worker data unavailable")).toBeTruthy();
+  });
+
+  it("opens a deep-linked audit view and replaces its contents when changing tabs", async () => {
+    window.history.replaceState({}, "", "/?view=events#routing");
+    render(<App />);
+
+    expect(await screen.findByText("SESSION_FAILOVER")).toBeTruthy();
+    expect(screen.queryByRole("heading", { name: "Live activity" })).toBeNull();
+    expect(screen.queryByRole("heading", { name: "Worker 1" })).toBeNull();
+    expect(
+      screen.getByRole("link", { name: "Routing & audit" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(document.title).toContain("Routing & audit");
+
+    window.location.hash = "#activity";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    await waitFor(() => {
+      expect(
+        screen.getByRole("heading", { name: "Live activity" }),
+      ).toBeTruthy();
+      expect(screen.queryByText("SESSION_FAILOVER")).toBeNull();
+      expect(document.title).toContain("Live activity");
+    });
+    expect(window.location.search).toContain("view=events");
+  });
+
+  it("falls back to overview for an unsupported tab URL", async () => {
+    window.history.replaceState({}, "", "/#unknown");
+    render(<App />);
+    expect(await screen.findByText("Direct local")).toBeTruthy();
+    expect(screen.getByRole("link", { name: "Overview" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.queryByRole("heading", { name: "Live activity" })).toBeNull();
   });
 });
