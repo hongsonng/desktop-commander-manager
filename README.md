@@ -62,6 +62,8 @@ Desktop Commander Manager (http://127.0.0.1:8787/mcp)
 Desktop Commander Workers (Local PC)
 ```
 
+> 📸 **Xem hướng dẫn chi tiết có hình ảnh minh họa:** 👉 [**docs/huong-dan-ket-noi-chatgpt.md**](docs/huong-dan-ket-noi-chatgpt.md) *(Bao gồm ảnh chụp màn hình từng bước cấu hình OpenAI Tunnel, Custom GPT Action và giao diện chat thực tế)*
+
 ### Phương thức 1: Kết nối chính thức qua OpenAI Secure MCP Tunnel (Khuyên dùng)
 
 Đây là phương thức bảo mật nhất: máy tính của bạn chỉ tạo kết nối outbound an toàn đến OpenAI, **không cần mở port router**, **không lộ IP**, và tự động khôi phục kết nối.
