@@ -1,5 +1,13 @@
+pub mod events;
 pub mod migrations;
 pub mod models;
+pub mod sessions;
+pub mod workers;
+
+pub use events::EventRepository;
+pub use models::*;
+pub use sessions::SessionRepository;
+pub use workers::WorkerRepository;
 
 use rusqlite::Connection;
 use std::path::Path;
@@ -15,6 +23,9 @@ pub enum DbError {
 
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+
+    #[error("Session not found: {0}")]
+    SessionNotFound(String),
 }
 
 pub struct ManagerDb {
@@ -44,6 +55,49 @@ impl ManagerDb {
 
     pub fn conn_mut(&mut self) -> &mut Connection {
         &mut self.conn
+    }
+
+    pub fn workers(&self) -> WorkerRepository<'_> {
+        WorkerRepository::new(&self.conn)
+    }
+
+    pub fn sessions(&self) -> SessionRepository<'_> {
+        SessionRepository::new(&self.conn)
+    }
+
+    pub fn events(&self) -> EventRepository<'_> {
+        EventRepository::new(&self.conn)
+    }
+
+    pub fn reconcile_runtime_state(&self) -> Result<(), DbError> {
+        let updated_at = chrono::Utc::now().to_rfc3339();
+        self.conn.execute(
+            "UPDATE workers SET status = CASE WHEN status = 'DISABLED' THEN 'DISABLED' ELSE 'STOPPED' END, pid = NULL, updated_at = ?1",
+            rusqlite::params![updated_at],
+        )?;
+        Ok(())
+    }
+
+    pub fn with_transaction<F, R>(&mut self, f: F) -> Result<R, DbError>
+    where
+        F: FnOnce(&rusqlite::Transaction<'_>) -> Result<R, DbError>,
+    {
+        let tx = self.conn.transaction()?;
+        let result = f(&tx)?;
+        tx.commit()?;
+        Ok(result)
+    }
+
+    pub fn record_worker_transition(
+        &mut self,
+        worker_id: &str,
+        patch: WorkerStatePatch,
+        event: &EventInput,
+    ) -> Result<EventRecord, DbError> {
+        self.with_transaction(|tx| {
+            WorkerRepository::new(tx).set_state(worker_id, patch)?;
+            EventRepository::new(tx).append(event)
+        })
     }
 
     pub fn close(self) -> Result<(), DbError> {
