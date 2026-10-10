@@ -13,3 +13,6 @@ logs/
 # Raw benchmark output
 benchmarks/results/
 
+# Rust build artifacts
+target/
+

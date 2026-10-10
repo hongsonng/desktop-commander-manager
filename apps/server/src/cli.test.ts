@@ -5,13 +5,34 @@ import * as cli from './cli'
 describe('CLI defaults', () => {
   it('keeps database, worker runtime, and dashboard paths inside the repository', () => {
     const root = resolve('D:/example/dc-manager')
-    expect(cli.createDefaultManagerConfig(root)).toEqual({
+    expect(cli.createDefaultManagerConfig(root, {})).toEqual({
       databasePath: join(root, 'data', 'manager.db'),
       runtimeRoot: join(root, 'data', 'workers'),
       dashboardDir: join(root, 'apps', 'dashboard', 'dist'),
       mcpPort: 8787,
       managementPort: 8788,
+      platformOwner: 'rust',
+      nativeSidecarPath: join(root, 'target', 'release', 'dcm-manager.exe'),
     })
+  })
+
+  it('parses platform owner from environment and validates values', () => {
+    expect(cli.parseCapabilityOwner(undefined)).toBe('rust')
+    expect(cli.parseCapabilityOwner('node')).toBe('node')
+    expect(cli.parseCapabilityOwner('rust')).toBe('rust')
+    expect(cli.parseCapabilityOwner('shadow')).toBe('shadow')
+    expect(cli.parseCapabilityOwner('  SHADOW  ')).toBe('shadow')
+    expect(() => cli.parseCapabilityOwner('invalid')).toThrow(/Invalid DCM_PLATFORM_OWNER/i)
+  })
+
+  it('uses custom DCM_NATIVE_SIDECAR_PATH when set', () => {
+    const root = resolve('D:/example/dc-manager')
+    const config = cli.createDefaultManagerConfig(root, {
+      DCM_PLATFORM_OWNER: 'rust',
+      DCM_NATIVE_SIDECAR_PATH: 'C:\\custom\\dcm.exe',
+    })
+    expect(config.platformOwner).toBe('rust')
+    expect(config.nativeSidecarPath).toBe('C:\\custom\\dcm.exe')
   })
 
   it('builds a minute watchdog task that runs the manager headlessly from this repository', () => {
