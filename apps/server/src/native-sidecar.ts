@@ -153,7 +153,11 @@ export class NativeSidecarClient {
     const child = spawn(executablePath, ['sidecar'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
-      env: env ? { ...process.env, ...env } : process.env,
+      env: {
+        ...process.env,
+        NODE_EXE: process.execPath,
+        ...env,
+      },
     })
 
     return new Promise((resolve, reject) => {
