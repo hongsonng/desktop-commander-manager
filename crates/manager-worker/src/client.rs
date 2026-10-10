@@ -33,9 +33,25 @@ impl WorkerClient {
         config: WorkerLaunchConfig,
         platform: Option<Arc<dyn ProcessPlatform>>,
     ) -> Result<Self, WorkerClientError> {
+        // Ensure worker runtime directory structure exists
+        let home_dir = config.runtime_dir.join("home");
+        let temp_dir = config.runtime_dir.join("temp");
+        let ps_temp_dir = temp_dir
+            .join("Microsoft")
+            .join("Windows")
+            .join("PowerShell");
+        let logs_dir = config.runtime_dir.join("logs");
+
+        let _ = std::fs::create_dir_all(&config.runtime_dir);
+        let _ = std::fs::create_dir_all(&home_dir);
+        let _ = std::fs::create_dir_all(&temp_dir);
+        let _ = std::fs::create_dir_all(&ps_temp_dir);
+        let _ = std::fs::create_dir_all(&logs_dir);
+
         let mut cmd = Command::new(&config.command);
         cmd.args(&config.args);
         cmd.envs(&config.env);
+        cmd.current_dir(&config.runtime_dir);
         cmd.stdin(Stdio::piped());
         cmd.stdout(Stdio::piped());
         cmd.stderr(Stdio::piped());

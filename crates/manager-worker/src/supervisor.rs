@@ -128,6 +128,26 @@ impl WorkerSupervisor {
             .collect()
     }
 
+    pub async fn ensure_worker(&self, config: WorkerLaunchConfig) {
+        let mut workers = self.workers.lock().await;
+        let id = config.worker_id.clone();
+        if let Some(existing) = workers.get_mut(&id) {
+            existing.config = config;
+        } else {
+            workers.insert(
+                id.clone(),
+                ManagedWorker {
+                    id,
+                    config,
+                    state_machine: WorkerStateMachine::new(WorkerState::Stopped),
+                    client: None,
+                    intentional_stop: false,
+                    recovery_handle: None,
+                },
+            );
+        }
+    }
+
     pub async fn start_worker(&self, id: &str) -> Result<u32, SupervisorError> {
         {
             let mut workers = self.workers.lock().await;

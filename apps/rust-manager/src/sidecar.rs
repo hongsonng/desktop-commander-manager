@@ -79,7 +79,9 @@ fn get_or_init_supervisor<'a>(
             .unwrap_or_else(|_| PathBuf::from("data").join("workers"));
         let base_dir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
 
-        let guard = match WindowsSupervisorOwnershipGuard::acquire(DEFAULT_SUPERVISOR_MUTEX_NAME) {
+        let mutex_name = std::env::var("DCM_SUPERVISOR_MUTEX_NAME")
+            .unwrap_or_else(|_| DEFAULT_SUPERVISOR_MUTEX_NAME.to_string());
+        let guard = match WindowsSupervisorOwnershipGuard::acquire(&mutex_name) {
             Ok(g) => Box::new(g),
             Err(e) => {
                 return Err(SidecarError::with_failure_kind(

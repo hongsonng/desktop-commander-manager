@@ -1,18 +1,23 @@
 import { existsSync, mkdirSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { createDatabase, type ManagerDatabase } from '@dc-manager/database'
 import { WorkerClient, type ProxyWorkerClient } from '@dc-manager/mcp-proxy'
 import { RetryPolicy, SessionRouter, UpstreamCallError } from '@dc-manager/router'
 import type { WorkerRecord } from '@dc-manager/shared'
 import {
   WorkerManager,
+  buildWorkerEnvironment,
   createDesktopCommanderProcessFactory,
+  resolveDesktopCommanderSpawnSpec,
   type DesktopCommanderProcessFactory,
   type WorkerProcessHandle,
 } from '@dc-manager/worker-manager'
 import { createMcpHttpServer } from './mcp-server.js'
 import { createManagementApi } from './management-api.js'
-import { NativeSidecarClient } from './native-sidecar.js'
+import {
+  NativeSidecarClient,
+  NativeSidecarWorkerClient,
+} from './native-sidecar.js'
 import {
   createNativeResourceCollector,
   createResourceMonitor,
@@ -52,36 +57,215 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     database.workers.upsertWorker(defaultWorker('worker-2', now))
   }
 
-  const processFactory = overrides.processFactory ?? createDesktopCommanderProcessFactory()
-  const workerClientFactory: WorkerClientFactory = overrides.workerClientFactory ?? { connect: (handle) => WorkerClient.connect(handle) }
-  const workerManager = new WorkerManager({ database, processFactory, runtimeRoot: config.runtimeRoot })
-  const clients = new Map<string, ProxyWorkerClient>()
+  const platformOwner = config.platformOwner ?? 'node'
+  const workerOwner = config.workerOwner ?? 'node'
+  let sidecarClient = overrides.sidecarClient ?? null
+  const shouldCloseSidecar = !overrides.sidecarClient
 
-  const connectWorker = async (workerId: string, handle: WorkerProcessHandle): Promise<void> => {
+  if (
+    !sidecarClient &&
+    (platformOwner === 'rust' ||
+      platformOwner === 'shadow' ||
+      workerOwner === 'rust' ||
+      workerOwner === 'shadow')
+  ) {
+    const sidecarPath =
+      config.nativeSidecarPath ??
+      resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
     try {
-      const client = await workerClientFactory.connect(handle, workerId)
-      clients.set(workerId, client)
-      workerManager.markReady(workerId)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      await workerManager.degradeWorker(workerId, message)
-      database.events.appendEvent({ sessionId: null, workerId, type: 'WORKER_HANDSHAKE_FAILED', message, metadataJson: null, createdAt: new Date().toISOString() })
+      sidecarClient = await NativeSidecarClient.start(sidecarPath, {
+        DCM_RUNTIME_ROOT: config.runtimeRoot,
+      })
+    } catch (sidecarErr) {
+      if (platformOwner === 'rust' || workerOwner === 'rust') {
+        throw new Error(
+          `Failed to start native sidecar for owner="rust": ${sidecarErr}`,
+        )
+      } else {
+        console.warn(
+          `[startManager] Native sidecar failed to start in shadow mode: ${sidecarErr}`,
+        )
+      }
     }
   }
 
-  for (const worker of database.workers.listWorkers().filter((item) => item.enabled)) {
-    try { await connectWorker(worker.id, await workerManager.startWorker(worker.id)) } catch { /* WorkerManager persisted OFFLINE */ }
+  const clients = new Map<string, ProxyWorkerClient>()
+
+  let workerManager: WorkerManager | undefined
+  let actions: {
+    restart(id: string): Promise<void>
+    enable(id: string): Promise<void>
+    disable(id: string): Promise<void>
+  }
+  let routableWorkers: {
+    getHealthyWorkers(): ReturnType<WorkerManager['getHealthyWorkers']>
+    restartWorker(id: string): Promise<void>
   }
 
-  const recoverWorker = async (workerId: string): Promise<void> => {
-    await clients.get(workerId)?.close().catch(() => undefined)
-    clients.delete(workerId)
-    await connectWorker(workerId, await workerManager.restartWorker(workerId))
+  if (workerOwner === 'rust') {
+    if (!sidecarClient) {
+      throw new Error('Native sidecar client is required when workerOwner is "rust"')
+    }
+
+    const stateMap: Record<string, 'READY' | 'BUSY' | 'DEGRADED' | 'STOPPED' | 'OFFLINE' | 'DISABLED' | 'STARTING'> = {
+      READY: 'READY',
+      BUSY: 'BUSY',
+      DEGRADED: 'DEGRADED',
+      STOPPED: 'STOPPED',
+      OFFLINE: 'OFFLINE',
+      DISABLED: 'DISABLED',
+      STARTING: 'STARTING',
+    }
+
+    sidecarClient.onWorkerStateChanged((event) => {
+      const mappedStatus = stateMap[event.state] ?? 'DEGRADED'
+      database.workers.setWorkerState(event.workerId, {
+        status: mappedStatus,
+        pid: event.pid ?? null,
+        ...(mappedStatus === 'READY' ? { lastHeartbeatAt: new Date().toISOString() } : {}),
+      })
+      database.events.appendEvent({
+        sessionId: null,
+        workerId: event.workerId,
+        type: `WORKER_${event.state}`,
+        message: event.reason ?? `${event.workerId} transitioned to ${event.state}`,
+        metadataJson: JSON.stringify({
+          pid: event.pid,
+          exitCode: event.exitCode,
+        }),
+        createdAt: new Date().toISOString(),
+      })
+    })
+
+    const startRustWorker = async (workerId: string): Promise<void> => {
+      const runtimeDir = join(config.runtimeRoot, workerId)
+      const spec = resolveDesktopCommanderSpawnSpec(process.cwd())
+      const command = spec.command
+      const args = spec.args
+      const env = buildWorkerEnvironment(runtimeDir) as Record<string, string>
+
+      const handle = await sidecarClient!.workerStart({
+        workerId,
+        runtimeDir,
+        command,
+        args,
+        env,
+      })
+
+      const client = new NativeSidecarWorkerClient(sidecarClient!, workerId)
+      clients.set(workerId, client)
+      database.workers.setWorkerState(workerId, {
+        status: 'READY',
+        pid: handle.pid,
+        lastHeartbeatAt: new Date().toISOString(),
+      })
+    }
+
+    for (const worker of database.workers.listWorkers().filter((item) => item.enabled)) {
+      try {
+        await startRustWorker(worker.id)
+      } catch (err) {
+        console.error(`[startRustWorker] Error starting ${worker.id}:`, err)
+        database.workers.setWorkerState(worker.id, {
+          status: 'OFFLINE',
+          pid: null,
+        })
+      }
+    }
+
+    routableWorkers = {
+      getHealthyWorkers: () =>
+        database.workers
+          .listWorkers()
+          .filter((w) => w.enabled && (w.status === 'READY' || w.status === 'BUSY'))
+          .map((w) => ({
+            ...w,
+            activeSessionCount: database.sessions.countByWorker(w.id),
+          })),
+      restartWorker: async (workerId: string) => {
+        await sidecarClient!.workerRestart({ workerId })
+      },
+    }
+
+    actions = {
+      async restart(id: string) {
+        await sidecarClient!.workerRestart({ workerId: id })
+      },
+      async enable(id: string) {
+        const current = database.workers.getWorker(id)
+        if (current) {
+          database.workers.upsertWorker({
+            ...current,
+            enabled: true,
+            status: 'STOPPED',
+            updatedAt: new Date().toISOString(),
+          })
+        }
+        await startRustWorker(id)
+      },
+      async disable(id: string) {
+        await sidecarClient!.workerStop({ workerId: id })
+        clients.delete(id)
+        const current = database.workers.getWorker(id)
+        if (current) {
+          database.workers.upsertWorker({
+            ...current,
+            enabled: false,
+            status: 'DISABLED',
+            pid: null,
+            updatedAt: new Date().toISOString(),
+          })
+        }
+      },
+    }
+  } else {
+    // Node supervisor authoritative (with optional shadow sidecar monitoring)
+    const processFactory = overrides.processFactory ?? createDesktopCommanderProcessFactory()
+    const workerClientFactory: WorkerClientFactory = overrides.workerClientFactory ?? { connect: (handle) => WorkerClient.connect(handle) }
+    workerManager = new WorkerManager({ database, processFactory, runtimeRoot: config.runtimeRoot })
+
+    const connectWorker = async (workerId: string, handle: WorkerProcessHandle): Promise<void> => {
+      try {
+        const client = await workerClientFactory.connect(handle, workerId)
+        clients.set(workerId, client)
+        workerManager!.markReady(workerId)
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        await workerManager!.degradeWorker(workerId, message)
+        database.events.appendEvent({ sessionId: null, workerId, type: 'WORKER_HANDSHAKE_FAILED', message, metadataJson: null, createdAt: new Date().toISOString() })
+      }
+    }
+
+    for (const worker of database.workers.listWorkers().filter((item) => item.enabled)) {
+      try { await connectWorker(worker.id, await workerManager.startWorker(worker.id)) } catch { /* WorkerManager persisted OFFLINE */ }
+    }
+
+    const recoverWorker = async (workerId: string): Promise<void> => {
+      await clients.get(workerId)?.close().catch(() => undefined)
+      clients.delete(workerId)
+      await connectWorker(workerId, await workerManager!.restartWorker(workerId))
+    }
+
+    routableWorkers = {
+      getHealthyWorkers: () => workerManager!.getHealthyWorkers(),
+      restartWorker: recoverWorker,
+    }
+
+    actions = {
+      async restart(id: string) {
+        await recoverWorker(id)
+      },
+      async enable(id: string) {
+        workerManager!.enableWorker(id)
+        await connectWorker(id, await workerManager!.startWorker(id))
+      },
+      async disable(id: string) {
+        await clients.get(id)?.close().catch(() => undefined); clients.delete(id)
+        await workerManager!.disableWorker(id)
+      },
+    }
   }
-  const routableWorkers = {
-    getHealthyWorkers: () => workerManager.getHealthyWorkers(),
-    restartWorker: recoverWorker,
-  }
+
   const sessionRouter = new SessionRouter({ database, workerManager: routableWorkers })
   const retryPolicy = new RetryPolicy()
   const mcpRuntime = await createMcpHttpServer({
@@ -109,37 +293,6 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       })
     },
   })
-
-  const actions = {
-    async restart(id: string) {
-      await recoverWorker(id)
-    },
-    async enable(id: string) {
-      workerManager.enableWorker(id)
-      await connectWorker(id, await workerManager.startWorker(id))
-    },
-    async disable(id: string) {
-      await clients.get(id)?.close().catch(() => undefined); clients.delete(id)
-      await workerManager.disableWorker(id)
-    },
-  }
-
-  const platformOwner = config.platformOwner ?? 'node'
-  let sidecarClient = overrides.sidecarClient ?? null
-  const shouldCloseSidecar = !overrides.sidecarClient
-
-  if (!sidecarClient && (platformOwner === 'rust' || platformOwner === 'shadow')) {
-    const sidecarPath = config.nativeSidecarPath ?? resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
-    try {
-      sidecarClient = await NativeSidecarClient.start(sidecarPath)
-    } catch (sidecarErr) {
-      if (platformOwner === 'rust') {
-        throw new Error(`Failed to start native sidecar for owner="rust": ${sidecarErr}`)
-      } else {
-        console.warn(`[startManager] Native sidecar failed to start in shadow mode: ${sidecarErr}`)
-      }
-    }
-  }
 
   const rustCollector = sidecarClient ? createNativeResourceCollector(sidecarClient) : undefined
   const resourceMonitor = createResourceMonitor(
@@ -175,7 +328,11 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       await mcpRuntime.close().catch(() => undefined)
       for (const client of clients.values()) await client.close().catch(() => undefined)
       clients.clear()
-      for (const worker of database.workers.listWorkers()) await workerManager.stopWorker(worker.id).catch(() => undefined)
+      if (workerManager) {
+        for (const worker of database.workers.listWorkers()) await workerManager.stopWorker(worker.id).catch(() => undefined)
+      } else if (sidecarClient) {
+        await sidecarClient.workerShutdownAll().catch(() => undefined)
+      }
       if (sidecarClient && shouldCloseSidecar) {
         await sidecarClient.close().catch(() => undefined)
       }
