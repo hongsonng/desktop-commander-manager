@@ -6,6 +6,7 @@ members = [
     "crates/manager-windows",
     "crates/manager-worker",
     "crates/manager-db",
+    "crates/manager-router",
 ]
 resolver = "2"
 
