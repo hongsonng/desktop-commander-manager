@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { PassThrough, type Readable, type Writable } from "node:stream";
+import { resolveDesktopCommanderSpawnSpec } from "./desktop-commander-package.js";
 
 const DESKTOP_COMMANDER_ARGS = [
   "-y",
@@ -107,10 +108,7 @@ export function createDesktopCommanderProcessFactory(): DesktopCommanderProcessF
       });
       mkdirSync(logs, { recursive: true });
 
-      const spawnSpec = desktopCommanderSpawnSpec(
-        process.platform,
-        process.env,
-      );
+      const spawnSpec = resolveDesktopCommanderSpawnSpec(root);
       const child = spawn(spawnSpec.command, spawnSpec.args, {
         env: buildWorkerEnvironment(root),
         stdio: ["pipe", "pipe", "pipe"],

@@ -25,9 +25,12 @@
     "lint:rust": "cargo fmt --check && cargo clippy --workspace --all-targets --all-features -- -D warnings"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "vitest": "^5.0.2",
     "@types/node": "^22.18.6",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "@wonderwhy-er/desktop-commander": "0.2.52"
   }
 }
