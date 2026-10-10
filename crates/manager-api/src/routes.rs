@@ -8,7 +8,12 @@ use axum::{Json, Router};
 use serde_json::Value;
 
 pub fn create_router(state: ApiState) -> Router {
-    Router::new()
+    let dashboard_service = state
+        .dashboard_dir
+        .as_deref()
+        .and_then(crate::static_files::create_static_service);
+
+    let mut router = Router::new()
         .route("/api/health", get(health_handler))
         .route("/api/connection", get(connection_handler))
         .route("/api/workers", get(workers_handler))
@@ -18,8 +23,13 @@ pub fn create_router(state: ApiState) -> Router {
         .route("/api/resources", get(resources_handler))
         .route("/api/sessions", get(sessions_handler))
         .route("/api/events", get(events_handler))
-        .route("/api/tool-calls", get(tool_calls_handler))
-        .with_state(state)
+        .route("/api/tool-calls", get(tool_calls_handler));
+
+    if let Some(serve_dir) = dashboard_service {
+        router = router.fallback_service(serve_dir);
+    }
+
+    router.with_state(state)
 }
 
 async fn health_handler(State(state): State<ApiState>) -> Json<HealthResponse> {
