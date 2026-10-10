@@ -16,4 +16,5 @@ benchmarks/results/
 # Rust build artifacts
 target/
 dist-release/
+x64/
 
