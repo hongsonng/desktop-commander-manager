@@ -21,10 +21,22 @@ import type {
   WorkerView,
 } from "./types";
 import "./styles.css";
-import "./polish.css";
 
 type ActivityFilter = "ALL" | "READ" | "WRITE" | "COMMAND" | "ERROR";
 type DetailTab = "sessions" | "events";
+type DashboardSection = "overview" | "activity" | "workers" | "resources" | "routing";
+
+const DASHBOARD_SECTIONS: readonly DashboardSection[] = [
+  "overview", "activity", "workers", "resources", "routing",
+];
+
+const SECTION_HEADINGS: Record<DashboardSection, { title: string; heading: string; subtitle: string }> = {
+  overview: { title: "Operations overview", heading: "Mission control", subtitle: "Your local command center at a glance." },
+  activity: { title: "Live activity", heading: "Tool execution log", subtitle: "Inspect recent tool calls, execution status, and errors." },
+  workers: { title: "Workers", heading: "Worker management", subtitle: "Monitor and manage worker processes and sessions." },
+  resources: { title: "Resource usage", heading: "System performance", subtitle: "Understand CPU, memory, and process utilization." },
+  routing: { title: "Routing & audit", heading: "Sessions & audit trail", subtitle: "Review active sessions and operational events." },
+};
 type Theme = "dark" | "light";
 type ConnectionState = "live" | "partial" | "stale" | "offline" | "connecting";
 type WorkerDataState = "loading" | "available" | "unavailable";
@@ -102,6 +114,13 @@ function readInitialFilter(): ActivityFilter {
   return ["READ", "WRITE", "COMMAND", "ERROR"].includes(value)
     ? (value as ActivityFilter)
     : "ALL";
+}
+
+function readSectionFromHash(): DashboardSection {
+  const value = window.location.hash.slice(1);
+  return DASHBOARD_SECTIONS.includes(value as DashboardSection)
+    ? (value as DashboardSection)
+    : "overview";
 }
 
 function readInitialTab(): DetailTab {
@@ -266,7 +285,7 @@ export function App() {
   );
   const [searchQuery, setSearchQuery] = useState(() => readInitialParam("q"));
   const [detailTab, setDetailTab] = useState<DetailTab>(readInitialTab);
-  const [activeSection, setActiveSection] = useState(() => window.location.hash.slice(1) || "overview");
+  const [activeSection, setActiveSection] = useState<DashboardSection>(readSectionFromHash);
   const [selectedCall, setSelectedCall] = useState<ToolCallView | null>(null);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(() =>
@@ -359,6 +378,10 @@ export function App() {
   }, [theme]);
 
   useEffect(() => {
+    document.title = `${SECTION_HEADINGS[activeSection].title} · Desktop Commander Manager`;
+  }, [activeSection]);
+
+  useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     activityFilter === "ALL"
       ? params.delete("kind")
@@ -378,7 +401,7 @@ export function App() {
 
   useEffect(() => {
     const updateActiveSection = () => {
-      setActiveSection(window.location.hash.slice(1) || "overview");
+      setActiveSection(readSectionFromHash());
     };
     window.addEventListener("hashchange", updateActiveSection);
     return () => window.removeEventListener("hashchange", updateActiveSection);
@@ -585,7 +608,7 @@ export function App() {
           <header className="command-bar">
             <div className="page-heading">
               <p className="eyebrow">CONTROL CENTER</p>
-              <strong>Operations overview</strong>
+              <strong>{SECTION_HEADINGS[activeSection].title}</strong>
             </div>
             <div className="command-actions">
               <div
@@ -626,6 +649,35 @@ export function App() {
             </div>
           </header>
 
+          {activeSection !== "overview" && (
+            <div className="view-intro">
+              <div>
+                <p className="eyebrow">WORKSPACE / {activeSection.toUpperCase()}</p>
+                <h2>{SECTION_HEADINGS[activeSection].heading}</h2>
+                <p>{SECTION_HEADINGS[activeSection].subtitle}</p>
+              </div>
+            </div>
+          )}
+
+      {error && (
+        <div
+          role="alert"
+          className={`alert ${connectionState === "offline" ? "alert-critical" : ""}`}
+        >
+          <div>
+            <strong>
+              {connectionState === "offline"
+                ? "Dashboard offline"
+                : "Some data is temporarily unavailable"}
+            </strong>
+            <span>{error}</span>
+          </div>
+          <button onClick={() => void refresh()}>Retry</button>
+        </div>
+      )}
+
+          {activeSection === "overview" && (
+            <>
       <section className="hero-panel" aria-label="Operations overview">
         <div className="hero-copy">
           <span className="hero-kicker"><span className="hero-kicker-dot" /> SYSTEM OVERVIEW <span className="hero-divider">/</span> LOCAL ENVIRONMENT</span>
@@ -677,23 +729,6 @@ export function App() {
         </button>
       </div>
 
-      {error && (
-        <div
-          role="alert"
-          className={`alert ${connectionState === "offline" ? "alert-critical" : ""}`}
-        >
-          <div>
-            <strong>
-              {connectionState === "offline"
-                ? "Dashboard offline"
-                : "Some data is temporarily unavailable"}
-            </strong>
-            <span>{error}</span>
-          </div>
-          <button onClick={() => void refresh()}>Retry</button>
-        </div>
-      )}
-
       <section className="status-strip" aria-label="Manager summary">
         <article>
           <span>Workers ready</span>
@@ -727,7 +762,11 @@ export function App() {
         </article>
       </section>
 
-      <div className="primary-grid">
+            </>
+          )}
+
+      {activeSection === "activity" && (
+      <div className="primary-grid single-view">
         <section className="workspace-panel activity-panel" id="activity">
           <div className="section-heading">
             <div>
@@ -867,7 +906,11 @@ export function App() {
             </div>
           )}
         </section>
+      </div>
+      )}
 
+      {activeSection === "workers" && (
+      <div className="primary-grid single-view">
         <aside className="worker-rail workspace-panel" id="workers" aria-label="Workers">
           <div className="section-heading compact">
             <div>
@@ -910,8 +953,10 @@ export function App() {
           </div>
         </aside>
       </div>
+      )}
 
-      <div className="secondary-grid">
+      {activeSection === "resources" && (
+      <div className="secondary-grid single-view">
         <section className="workspace-panel resource-panel" id="resources">
           <div className="section-heading compact">
             <div>
@@ -979,7 +1024,11 @@ export function App() {
             ))}
           </div>
         </section>
+      </div>
+      )}
 
+      {activeSection === "routing" && (
+      <div className="secondary-grid single-view">
         <section className="workspace-panel detail-panel" id="routing">
           <div
             className="detail-tabs"
@@ -1052,6 +1101,7 @@ export function App() {
           )}
         </section>
       </div>
+      )}
         </div>
       </div>
 
