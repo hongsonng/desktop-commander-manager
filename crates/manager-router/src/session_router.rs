@@ -1,6 +1,5 @@
 use chrono::Utc;
 use manager_db::{DbError, EventInput, ManagerDb, SessionBinding, WorkerDescriptor};
-use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -19,13 +18,7 @@ pub enum RouteError {
     Worker(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct RouteContext {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub session_id: Option<String>,
-    pub connection_id: String,
-}
+pub use manager_protocol::RouteContext;
 
 pub fn create_fallback_session_id(connection_id: &str) -> String {
     let mut hasher = Sha256::new();

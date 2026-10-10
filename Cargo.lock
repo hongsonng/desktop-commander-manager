@@ -112,12 +112,16 @@ dependencies = [
 name = "dcm-manager"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "manager-db",
  "manager-platform",
  "manager-protocol",
+ "manager-router",
  "manager-windows",
  "manager-worker",
  "serde",
  "serde_json",
+ "tempfile",
  "tokio",
 ]
 
@@ -331,6 +335,7 @@ dependencies = [
 name = "manager-protocol"
 version = "0.1.0"
 dependencies = [
+ "manager-db",
  "serde",
  "serde_json",
  "thiserror",

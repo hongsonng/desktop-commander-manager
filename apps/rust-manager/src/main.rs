@@ -1,3 +1,4 @@
+pub mod backend;
 mod sidecar;
 
 use std::env;
