@@ -240,4 +240,33 @@ describe("dashboard", () => {
     );
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("shows the recent activity signal and navigates between dashboard sections", async () => {
+    const user = userEvent.setup();
+    vi.mocked(api.getToolCalls).mockResolvedValueOnce([{
+      id: 22,
+      sessionId: "chat-a",
+      workerId: "worker-1",
+      toolName: "read_file",
+      argsSummary: "path=D:/repo/file.txt",
+      status: "ERROR",
+      durationMs: 48,
+      failedOver: false,
+      error: "read failed",
+      createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    }]);
+    render(<App />);
+    expect(await screen.findByRole("img", {
+      name: "1 tool call in the past hour from the latest snapshot, 1 error",
+    })).toBeTruthy();
+    expect(screen.getByText("60 MIN AGO")).toBeTruthy();
+
+    const navigation = screen.getByRole("navigation", {
+      name: "Dashboard sections",
+    });
+    const workerLink = within(navigation).getByRole("link", { name: "Workers" });
+    await user.click(workerLink);
+    expect(workerLink).toHaveAttribute("href", "#workers");
+    expect(workerLink).toHaveClass("nav-current");
+  });
 });
