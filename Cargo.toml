@@ -4,6 +4,7 @@ members = [
     "crates/manager-protocol",
     "crates/manager-platform",
     "crates/manager-windows",
+    "crates/manager-worker",
 ]
 resolver = "2"
 
