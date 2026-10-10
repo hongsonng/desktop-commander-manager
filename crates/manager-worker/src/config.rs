@@ -127,10 +127,12 @@ pub fn resolve_desktop_commander_spawn_spec(
         .unwrap_or_else(|_| PathBuf::from("node"));
 
     let args = if let Ok(args_json) = std::env::var("DCM_WORKER_ARGS") {
-        serde_json::from_str::<Vec<String>>(&args_json).unwrap_or_else(|_| vec![
-            bin_path.to_string_lossy().to_string(),
-            "--no-onboarding".into(),
-        ])
+        serde_json::from_str::<Vec<String>>(&args_json).unwrap_or_else(|_| {
+            vec![
+                bin_path.to_string_lossy().to_string(),
+                "--no-onboarding".into(),
+            ]
+        })
     } else {
         vec![
             bin_path.to_string_lossy().to_string(),

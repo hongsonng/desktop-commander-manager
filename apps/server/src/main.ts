@@ -144,14 +144,15 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       },
     }
   } else {
-    database = createDatabase(config.databasePath)
-    database.reconcileRuntimeState()
-    if (database.workers.listWorkers().length === 0) {
+    const nodeDb = createDatabase(config.databasePath)
+    database = nodeDb
+    nodeDb.reconcileRuntimeState()
+    if (nodeDb.workers.listWorkers().length === 0) {
       const now = new Date().toISOString()
-      database.workers.upsertWorker(defaultWorker('worker-1', now))
-      database.workers.upsertWorker(defaultWorker('worker-2', now))
+      nodeDb.workers.upsertWorker(defaultWorker('worker-1', now))
+      nodeDb.workers.upsertWorker(defaultWorker('worker-2', now))
     }
-    state = new NodeManagerStateProvider(database)
+    state = new NodeManagerStateProvider(nodeDb)
 
     let routableWorkers: {
       getHealthyWorkers(): ReturnType<WorkerManager['getHealthyWorkers']>
@@ -176,12 +177,12 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     sidecarClient.onWorkerStateChanged((event) => {
       if (event.state === 'BUSY') return
       const mappedStatus = stateMap[event.state] ?? 'DEGRADED'
-      database.workers.setWorkerState(event.workerId, {
+      nodeDb.workers.setWorkerState(event.workerId, {
         status: mappedStatus,
         pid: event.pid ?? null,
         ...(mappedStatus === 'READY' ? { lastHeartbeatAt: new Date().toISOString() } : {}),
       })
-      database.events.appendEvent({
+      nodeDb.events.appendEvent({
         sessionId: null,
         workerId: event.workerId,
         type: `WORKER_${event.state}`,
@@ -215,19 +216,19 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
 
       const client = new NativeSidecarWorkerClient(sidecarClient!, workerId)
       clients.set(workerId, client)
-      database.workers.setWorkerState(workerId, {
+      nodeDb.workers.setWorkerState(workerId, {
         status: 'READY',
         pid: handle.pid,
         lastHeartbeatAt: new Date().toISOString(),
       })
     }
 
-    for (const worker of database.workers.listWorkers().filter((item) => item.enabled)) {
+    for (const worker of nodeDb.workers.listWorkers().filter((item) => item.enabled)) {
       try {
         await startRustWorker(worker.id)
       } catch (err) {
         console.error(`[startRustWorker] Error starting ${worker.id}:`, err)
-        database.workers.setWorkerState(worker.id, {
+        nodeDb.workers.setWorkerState(worker.id, {
           status: 'OFFLINE',
           pid: null,
         })
@@ -236,12 +237,12 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
 
     routableWorkers = {
       getHealthyWorkers: () =>
-        database.workers
+        nodeDb.workers
           .listWorkers()
           .filter((w) => w.enabled && (w.status === 'READY' || w.status === 'BUSY'))
           .map((w) => ({
             ...w,
-            activeSessionCount: database.sessions.countByWorker(w.id),
+            activeSessionCount: nodeDb.sessions.countByWorker(w.id),
           })),
       restartWorker: async (workerId: string) => {
         await sidecarClient!.workerRestart({ workerId })
@@ -253,9 +254,9 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
         await sidecarClient!.workerRestart({ workerId: id })
       },
       async enable(id: string) {
-        const current = database.workers.getWorker(id)
+        const current = nodeDb.workers.getWorker(id)
         if (current) {
-          database.workers.upsertWorker({
+          nodeDb.workers.upsertWorker({
             ...current,
             enabled: true,
             status: 'STOPPED',
@@ -267,9 +268,9 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       async disable(id: string) {
         await sidecarClient!.workerStop({ workerId: id })
         clients.delete(id)
-        const current = database.workers.getWorker(id)
+        const current = nodeDb.workers.getWorker(id)
         if (current) {
-          database.workers.upsertWorker({
+          nodeDb.workers.upsertWorker({
             ...current,
             enabled: false,
             status: 'DISABLED',
@@ -283,7 +284,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     // Node supervisor authoritative (with optional shadow sidecar monitoring)
     const processFactory = overrides.processFactory ?? createDesktopCommanderProcessFactory()
     const workerClientFactory: WorkerClientFactory = overrides.workerClientFactory ?? { connect: (handle) => WorkerClient.connect(handle) }
-    workerManager = new WorkerManager({ database, processFactory, runtimeRoot: config.runtimeRoot })
+    workerManager = new WorkerManager({ database: nodeDb, processFactory, runtimeRoot: config.runtimeRoot })
 
     const connectWorker = async (workerId: string, handle: WorkerProcessHandle): Promise<void> => {
       try {
@@ -293,11 +294,11 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error)
         await workerManager!.degradeWorker(workerId, message)
-        database.events.appendEvent({ sessionId: null, workerId, type: 'WORKER_HANDSHAKE_FAILED', message, metadataJson: null, createdAt: new Date().toISOString() })
+        nodeDb.events.appendEvent({ sessionId: null, workerId, type: 'WORKER_HANDSHAKE_FAILED', message, metadataJson: null, createdAt: new Date().toISOString() })
       }
     }
 
-    for (const worker of database.workers.listWorkers().filter((item) => item.enabled)) {
+    for (const worker of nodeDb.workers.listWorkers().filter((item) => item.enabled)) {
       try { await connectWorker(worker.id, await workerManager.startWorker(worker.id)) } catch { /* WorkerManager persisted OFFLINE */ }
     }
 
@@ -327,7 +328,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     }
   }
 
-  const sessionRouter = new SessionRouter({ database, workerManager: routableWorkers })
+  const sessionRouter = new SessionRouter({ database: nodeDb, workerManager: routableWorkers })
   const retryPolicy = new RetryPolicy()
   proxyBackend = new NodeMcpProxyBackend(sessionRouter, retryPolicy, (workerId) => {
     const client = clients.get(workerId)

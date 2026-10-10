@@ -18,6 +18,7 @@
     "smoke:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1",
     "benchmark:node": "tsx tests/benchmarks/node-baseline.ts",
     "benchmark:m1": "tsx tests/benchmarks/m1-platform-benchmark.ts",
+    "benchmark:m4": "tsx tests/benchmarks/m4-state-router-benchmark.ts",
     "test:contracts": "vitest run tests/contracts",
     "test:recovery": "vitest run tests/recovery",
     "build:rust": "cargo build --workspace --release",
