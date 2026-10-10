@@ -8,19 +8,19 @@ Tài liệu này hướng dẫn bạn từng bước cách kết nối **ChatGPT
 
 ```mermaid
 flowchart TD
-    subgraph Cloud["1. Trên Cloud (ChatGPT)"]
+    subgraph Cloud["1. Cloud: ChatGPT"]
         GPT["ChatGPT Web / Mobile App"]
     end
 
     subgraph Tunnel["2. Đường truyền bảo mật mã hóa"]
-        SEC["OpenAI Secure Tunnel<br/>(hoặc Cloudflare Tunnel / ngrok)"]
+        SEC["OpenAI Secure Tunnel / Cloudflare / ngrok"]
     end
 
-    subgraph LocalPC["3. Trên máy tính của bạn (Local PC)"]
-        DCM["Desktop Commander Manager<br/>http://127.0.0.1:8787/mcp"]
-        W1["Worker 1 (Desktop Commander)"]
-        W2["Worker 2 (Desktop Commander)"]
-        UI["Web Dashboard<br/>http://127.0.0.1:8788/"]
+    subgraph LocalPC["3. Máy tính cá nhân: Local PC"]
+        DCM["Desktop Commander Manager (Port 8787)"]
+        W1["Worker 1: Desktop Commander"]
+        W2["Worker 2: Desktop Commander"]
+        UI["Web Dashboard (Port 8788)"]
     end
 
     GPT -->|Gọi công cụ an toàn| SEC
