@@ -13,8 +13,18 @@ on:
 
 jobs:
   validate-and-build:
-    name: Build & Test (Windows x64)
-    runs-on: windows-latest
+    name: Build & Test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            artifact_name: dcm-manager-windows-x64
+            binary_path: target/release/dcm-manager.exe
+          - os: ubuntu-latest
+            artifact_name: dcm-manager-linux-x64
+            binary_path: target/release/dcm-manager
 
     steps:
       - name: Checkout repository
@@ -55,9 +65,9 @@ jobs:
       - name: Run Vitest test suite
         run: npm test
 
-      - name: Upload dcm-manager.exe artifact
+      - name: Upload binary artifact
         uses: actions/upload-artifact@v4
         with:
-          name: dcm-manager-windows-x64
-          path: target/release/dcm-manager.exe
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.binary_path }}
           if-no-files-found: error

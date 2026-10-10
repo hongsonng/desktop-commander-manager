@@ -1,6 +1,8 @@
 import type { CapabilityOwner } from './native-sidecar.js'
 
 export type { CapabilityOwner } from './native-sidecar.js'
+export type StateOwner = 'node' | 'rust'
+export type ManagementApiOwner = 'node' | 'rust'
 
 export interface ManagerConfig {
   databasePath: string
@@ -10,6 +12,8 @@ export interface ManagerConfig {
   dashboardDir?: string
   platformOwner?: CapabilityOwner
   workerOwner?: CapabilityOwner
+  stateOwner?: StateOwner
+  managementApiOwner?: ManagementApiOwner
   nativeSidecarPath?: string
 }
 

@@ -1,5 +1,14 @@
+pub use manager_db::{EventInput, EventRecord, SessionBinding, WorkerDescriptor, WorkerRecord};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RouteContext {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<String>,
+    pub connection_id: String,
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -38,6 +47,106 @@ pub enum SidecarRequest {
 
     #[serde(rename = "worker/shutdownAll")]
     WorkerShutdownAll(WorkerShutdownAllRequest),
+
+    // Backend and Proxy requests (M4)
+    #[serde(rename = "backend/open")]
+    BackendOpen(BackendOpenRequest),
+
+    #[serde(rename = "backend/close")]
+    BackendClose(BackendCloseRequest),
+
+    #[serde(rename = "proxy/listTools")]
+    ProxyListTools(ProxyListToolsRequest),
+
+    #[serde(rename = "proxy/callTool")]
+    ProxyCallTool(ProxyCallToolRequest),
+
+    #[serde(rename = "state/getWorker")]
+    StateGetWorker(StateGetWorkerRequest),
+
+    #[serde(rename = "state/listWorkers")]
+    StateListWorkers(StateListWorkersRequest),
+
+    #[serde(rename = "state/listSessions")]
+    StateListSessions(StateListSessionsRequest),
+
+    #[serde(rename = "state/listEvents")]
+    StateListEvents(StateListEventsRequest),
+
+    #[serde(rename = "state/appendEvent")]
+    StateAppendEvent(StateAppendEventRequest),
+
+    #[serde(rename = "state/setWorkerEnabled")]
+    StateSetWorkerEnabled(StateSetWorkerEnabledRequest),
+
+    #[serde(rename = "management/start")]
+    ManagementStart(ManagementStartRequest),
+
+    #[serde(rename = "management/stop")]
+    ManagementStop(ManagementStopRequest),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackendOpenRequest {
+    pub database_path: String,
+    pub runtime_root: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct BackendCloseRequest {}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyListToolsRequest {
+    pub context: RouteContext,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProxyCallToolRequest {
+    pub context: RouteContext,
+    pub name: String,
+    pub arguments: serde_json::Value,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub meta: Option<serde_json::Value>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateGetWorkerRequest {
+    pub worker_id: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StateListWorkersRequest {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StateListSessionsRequest {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct StateListEventsRequest {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub limit: Option<usize>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateAppendEventRequest {
+    pub event: EventInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateSetWorkerEnabledRequest {
+    pub worker_id: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -155,7 +264,91 @@ pub enum SidecarResult {
     WorkerHandle(WorkerHandleResult),
     ListTools(WorkerListToolsResult),
     CallTool(WorkerCallToolResult),
+    ProxyListTools(ProxyListToolsResult),
+    ProxyCallTool(ProxyCallToolResult),
+    StateGetWorker(StateGetWorkerResult),
+    StateListWorkers(StateListWorkersResult),
+    StateListSessions(StateListSessionsResult),
+    StateListEvents(StateListEventsResult),
+    StateAppendEvent(StateAppendEventResult),
+    ManagementStart(ManagementStartResult),
     Empty(serde_json::Value),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagementStartRequest {
+    #[serde(default = "default_management_host")]
+    pub host: String,
+    #[serde(default = "default_management_port")]
+    pub port: u16,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dashboard_dir: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mcp_url: Option<String>,
+}
+
+fn default_management_host() -> String {
+    "127.0.0.1".to_string()
+}
+
+fn default_management_port() -> u16 {
+    8788
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagementStopRequest {}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ManagementStartResult {
+    pub url: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProxyListToolsResult {
+    pub worker_id: String,
+    pub result: WorkerListToolsResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProxyCallToolResult {
+    pub worker_id: String,
+    pub failed_over: bool,
+    pub result: WorkerCallToolResult,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StateGetWorkerResult {
+    pub worker: Option<WorkerRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StateListWorkersResult {
+    pub workers: Vec<WorkerDescriptor>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StateListSessionsResult {
+    pub sessions: Vec<SessionBinding>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StateListEventsResult {
+    pub events: Vec<EventRecord>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct StateAppendEventResult {
+    pub event: EventRecord,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

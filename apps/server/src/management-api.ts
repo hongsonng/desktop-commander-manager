@@ -4,6 +4,8 @@ import type { ManagerDatabase } from '@dc-manager/database'
 import fastifyStatic from '@fastify/static'
 import Fastify from 'fastify'
 import type { ResourceUsageSnapshot } from './resource-monitor.js'
+import type { ManagerStateProvider } from './manager-state.js'
+import { NodeManagerStateProvider } from './node-manager-state.js'
 
 export interface ManagementActions {
   restart(id: string): Promise<void>
@@ -32,7 +34,8 @@ function parseToolCallMetadata(value: string | null): ToolCallMetadata {
 }
 
 type Options = {
-  database: ManagerDatabase
+  database?: ManagerDatabase
+  state?: ManagerStateProvider
   actions: ManagementActions
   connectionInfo?: ConnectionInfo
   port?: number
@@ -41,6 +44,7 @@ type Options = {
 }
 
 export async function createManagementApi(options: Options): Promise<{ url: string; close(): Promise<void> }> {
+  const state: ManagerStateProvider = options.state ?? new NodeManagerStateProvider(options.database!)
   const app = Fastify({ logger: false })
   const startedAt = Date.now()
 
@@ -50,7 +54,7 @@ export async function createManagementApi(options: Options): Promise<{ url: stri
     mcpUrl: 'http://127.0.0.1:8787/mcp',
     workerStrategy: 'sticky-failover',
   } satisfies ConnectionInfo))
-  app.get('/api/workers', async () => options.database.workers.listWorkers().map((worker) => ({ ...worker, activeSessionCount: options.database.sessions.countByWorker(worker.id) })))
+  app.get('/api/workers', async () => state.listWorkers())
   app.get('/api/resources', async () => options.resources?.snapshot() ?? ({
     available: false,
     sampledAt: new Date().toISOString(),
@@ -58,9 +62,9 @@ export async function createManagementApi(options: Options): Promise<{ url: stri
     system: { memoryUsedBytes: 0, totalMemoryBytes: 0, cpuPercent: 0 },
     items: [],
   } satisfies ResourceUsageSnapshot))
-  app.get('/api/sessions', async () => options.database.sessions.listSessions())
-  app.get('/api/events', async () => options.database.events.listEvents(200).filter((event) => event.type !== 'TOOL_CALL').slice(0, 100))
-  app.get('/api/tool-calls', async () => options.database.events.listEvents(500)
+  app.get('/api/sessions', async () => state.listSessions())
+  app.get('/api/events', async () => (await state.listEvents(200)).filter((event) => event.type !== 'TOOL_CALL').slice(0, 100))
+  app.get('/api/tool-calls', async () => (await state.listEvents(500))
     .filter((event) => event.type === 'TOOL_CALL')
     .slice(0, 100)
     .map((event) => {
@@ -82,9 +86,10 @@ export async function createManagementApi(options: Options): Promise<{ url: stri
   for (const action of ['restart', 'enable', 'disable'] as const) {
     app.post(`/api/workers/:id/${action}`, async (request, reply) => {
       const { id } = request.params as { id: string }
-      if (!options.database.workers.getWorker(id)) return reply.code(404).send({ error: 'WORKER_NOT_FOUND', workerId: id })
+      const current = await state.getWorker(id)
+      if (!current) return reply.code(404).send({ error: 'WORKER_NOT_FOUND', workerId: id })
       await options.actions[action](id)
-      return options.database.workers.getWorker(id)
+      return await state.getWorker(id)
     })
   }
 

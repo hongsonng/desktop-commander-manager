@@ -13,6 +13,8 @@ describe('CLI defaults', () => {
       managementPort: 8788,
       platformOwner: 'rust',
       workerOwner: 'node',
+      stateOwner: 'node',
+      managementApiOwner: 'node',
       nativeSidecarPath: join(root, 'target', 'release', 'dcm-manager.exe'),
     })
   })
@@ -26,6 +28,64 @@ describe('CLI defaults', () => {
     expect(cli.parseCapabilityOwner('  SHADOW  ')).toBe('shadow')
     expect(() => cli.parseCapabilityOwner('invalid')).toThrow(/Invalid DCM_PLATFORM_OWNER/i)
     expect(() => cli.parseCapabilityOwner('bad', 'node', 'DCM_WORKER_OWNER')).toThrow(/Invalid DCM_WORKER_OWNER/i)
+  })
+
+  it('parses state owner from environment and validates values', () => {
+    expect(cli.parseStateOwner(undefined)).toBe('node')
+    expect(cli.parseStateOwner('node')).toBe('node')
+    expect(cli.parseStateOwner('rust')).toBe('rust')
+    expect(cli.parseStateOwner('  RUST  ')).toBe('rust')
+    expect(() => cli.parseStateOwner('invalid')).toThrow(/Invalid DCM_STATE_OWNER/i)
+  })
+
+  it('parses management API owner from environment and validates values', () => {
+    expect(cli.parseManagementApiOwner(undefined)).toBe('node')
+    expect(cli.parseManagementApiOwner('node')).toBe('node')
+    expect(cli.parseManagementApiOwner('rust')).toBe('rust')
+    expect(cli.parseManagementApiOwner('  RUST  ')).toBe('rust')
+    expect(() => cli.parseManagementApiOwner('invalid')).toThrow(/Invalid DCM_MANAGEMENT_API_OWNER/i)
+  })
+
+  it('validates config: rejects invalid stateOwner or managementApiOwner combinations', () => {
+    expect(() => {
+      cli.validateManagerConfig({
+        databasePath: 'test.db',
+        runtimeRoot: 'workers',
+        stateOwner: 'rust',
+        workerOwner: 'node',
+      })
+    }).toThrow(/stateOwner="rust" requires workerOwner="rust"/i)
+
+    expect(() => {
+      cli.validateManagerConfig({
+        databasePath: 'test.db',
+        runtimeRoot: 'workers',
+        stateOwner: 'node',
+        workerOwner: 'rust',
+        managementApiOwner: 'rust',
+      })
+    }).toThrow(/managementApiOwner="rust" requires stateOwner="rust"/i)
+
+    expect(() => {
+      cli.validateManagerConfig({
+        databasePath: 'test.db',
+        runtimeRoot: 'workers',
+        stateOwner: 'rust',
+        workerOwner: 'node',
+        managementApiOwner: 'rust',
+      })
+    }).toThrow(/requires workerOwner="rust"/i)
+
+    expect(() => {
+      cli.validateManagerConfig({
+        databasePath: 'test.db',
+        runtimeRoot: 'workers',
+        stateOwner: 'rust',
+        workerOwner: 'rust',
+        managementApiOwner: 'rust',
+        nativeSidecarPath: 'C:\\nonexistent\\dcm.exe',
+      })
+    }).toThrow(/Native sidecar executable not found/i)
   })
 
   it('uses custom DCM_NATIVE_SIDECAR_PATH when set', () => {

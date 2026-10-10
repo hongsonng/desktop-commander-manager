@@ -54,11 +54,11 @@ describe("Rust Worker Supervisor Recovery Gate", () => {
 
       try {
         // 1. Verify both workers started and handshook to READY
-        const workers = runtime.database.workers.listWorkers();
+        const workers = await runtime.state.listWorkers();
         expect(workers).toHaveLength(2);
         expect(workers.every((w) => w.enabled)).toBe(true);
 
-        const worker1 = runtime.database.workers.getWorker("worker-1");
+        const worker1 = await runtime.state.getWorker("worker-1");
         expect(worker1).toBeDefined();
         expect(worker1?.status).toBe("READY");
         expect(worker1?.pid).toBeGreaterThan(0);
@@ -85,7 +85,7 @@ describe("Rust Worker Supervisor Recovery Gate", () => {
       const deadline = Date.now() + 5000;
 
       while (Date.now() < deadline) {
-        const current = runtime.database.workers.getWorker("worker-1");
+        const current = await runtime.state.getWorker("worker-1");
         if (current && current.status === "READY" && current.pid && current.pid !== initialPid) {
           recovered = true;
           newPid = current.pid;

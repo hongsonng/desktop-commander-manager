@@ -32,18 +32,18 @@ describe('startManager', () => {
     db.workers.upsertWorker({ id: 'worker-1', name: 'worker-1', enabled: true, status: 'READY', pid: 999, failureCount: 0, lastHeartbeatAt: null, createdAt: '2026-09-29T00:00:00.000Z', updatedAt: '2026-09-29T00:00:00.000Z' }); db.close()
     const processes = new FakeProcesses(); const clients = new FakeWorkerClients()
     const runtime = await startManager({ databasePath: dbPath, runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: processes, workerClientFactory: clients })
-    expect(runtime.database.workers.listWorkers()).toHaveLength(1)
-    expect(runtime.database.workers.getWorker('worker-1')).toMatchObject({ status: 'READY', pid: 500 })
+    expect(await runtime.state.listWorkers()).toHaveLength(1)
+    expect(await runtime.state.getWorker('worker-1')).toMatchObject({ status: 'READY', pid: 500 })
     await runtime.close(); expect(processes.stopped).toEqual([500])
 
     const runtime2 = await startManager({ databasePath: dbPath, runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: new FakeProcesses(), workerClientFactory: new FakeWorkerClients() })
-    expect(runtime2.database.workers.listWorkers()).toHaveLength(1); await runtime2.close()
+    expect(await runtime2.state.listWorkers()).toHaveLength(1); await runtime2.close()
   })
 
   it('seeds two default workers for a fresh database', async () => {
     const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
     const runtime = await startManager({ databasePath: join(root, 'manager.db'), runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: new FakeProcesses(), workerClientFactory: new FakeWorkerClients() })
-    expect(runtime.database.workers.listWorkers().map((w) => w.id)).toEqual(['worker-1', 'worker-2']); await runtime.close()
+    expect((await runtime.state.listWorkers()).map((w) => w.id)).toEqual(['worker-1', 'worker-2']); await runtime.close()
   })
 
   it('marks a worker degraded and stops its process when MCP handshake fails', async () => {
@@ -51,8 +51,8 @@ describe('startManager', () => {
     const clients = new FakeWorkerClients(); clients.failWorkerId = 'worker-2'
     const processes = new FakeProcesses()
     const runtime = await startManager({ databasePath: join(root, 'manager.db'), runtimeRoot: join(root, 'workers'), mcpPort: 0, managementPort: 0 }, { processFactory: processes, workerClientFactory: clients })
-    expect(runtime.database.workers.getWorker('worker-1')?.status).toBe('READY')
-    expect(runtime.database.workers.getWorker('worker-2')?.status).toBe('DEGRADED')
+    expect((await runtime.state.getWorker('worker-1'))?.status).toBe('READY')
+    expect((await runtime.state.getWorker('worker-2'))?.status).toBe('DEGRADED')
     expect(processes.stopped).toContain(501)
     await runtime.close()
   })
@@ -84,5 +84,170 @@ describe('startManager', () => {
     )
     expect(runtime.managementUrl).toBeTruthy()
     await runtime.close()
+  })
+
+  it('rejects stateOwner="rust" when workerOwner is not "rust"', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    await expect(
+      startManager({
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        stateOwner: 'rust',
+        workerOwner: 'node',
+      }),
+    ).rejects.toThrow(/stateOwner="rust" requires workerOwner="rust"/i)
+  })
+
+  it('initializes with stateOwner="rust", delegating DB and routing exclusively to sidecar', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    let opened = false
+    let closed = false
+    const fakeSidecar = {
+      backendOpen: async () => { opened = true },
+      backendClose: async () => { closed = true },
+      stateListWorkers: async () => [
+        {
+          id: 'worker-1',
+          name: 'worker-1',
+          enabled: true,
+          status: 'READY',
+          pid: 101,
+          failureCount: 0,
+          lastHeartbeatAt: null,
+          createdAt: '2026-10-10T00:00:00.000Z',
+          updatedAt: '2026-10-10T00:00:00.000Z',
+          activeSessionCount: 0,
+        },
+      ],
+      stateGetWorker: async (id: string) => ({
+        id,
+        name: id,
+        enabled: true,
+        status: 'READY',
+        pid: 101,
+        failureCount: 0,
+        lastHeartbeatAt: null,
+        createdAt: '2026-10-10T00:00:00.000Z',
+        updatedAt: '2026-10-10T00:00:00.000Z',
+      }),
+      stateListSessions: async () => [],
+      stateListEvents: async () => [],
+      stateAppendEvent: async () => ({
+        id: 1,
+        sessionId: null,
+        workerId: null,
+        type: 'TEST',
+        message: 'test',
+        metadataJson: null,
+        createdAt: '2026-10-10T00:00:00.000Z',
+      }),
+      proxyListTools: async () => ({ workerId: 'worker-1', result: { tools: [] } }),
+      proxyCallTool: async () => ({ workerId: 'worker-1', failedOver: false, result: { content: [] } }),
+      close: async () => undefined,
+    } as any
+
+    const runtime = await startManager(
+      {
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        stateOwner: 'rust',
+        workerOwner: 'rust',
+      },
+      {
+        sidecarClient: fakeSidecar,
+      },
+    )
+
+    expect(opened).toBe(true)
+    // Node must NOT open SQLite directly when stateOwner="rust"
+    expect(runtime.database).toBeUndefined()
+    expect(await runtime.state.listWorkers()).toHaveLength(1)
+    expect(runtime.mcpUrl).toBeTruthy()
+    expect(runtime.managementUrl).toBeTruthy()
+
+    await runtime.close()
+    expect(closed).toBe(true)
+  })
+
+  it('rejects managementApiOwner="rust" when stateOwner or workerOwner is not "rust"', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    await expect(
+      startManager({
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        managementApiOwner: 'rust',
+        stateOwner: 'node',
+        workerOwner: 'rust',
+      }),
+    ).rejects.toThrow(/managementApiOwner="rust" requires stateOwner="rust"/i)
+
+    await expect(
+      startManager({
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        managementApiOwner: 'rust',
+        stateOwner: 'rust',
+        workerOwner: 'node',
+      }),
+    ).rejects.toThrow(/managementApiOwner="rust" requires workerOwner="rust"|stateOwner="rust" requires workerOwner="rust"/i)
+  })
+
+  it('initializes with managementApiOwner="rust", delegating dashboard API to sidecar listener', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    let mgmtStarted = false
+    let mgmtStopped = false
+    let capturedOptions: any = null
+
+    const fakeSidecar = {
+      backendOpen: async () => undefined,
+      backendClose: async () => undefined,
+      stateListWorkers: async () => [],
+      stateGetWorker: async () => undefined,
+      stateListSessions: async () => [],
+      stateListEvents: async () => [],
+      proxyListTools: async () => ({ workerId: 'worker-1', result: { tools: [] } }),
+      proxyCallTool: async () => ({ workerId: 'worker-1', failedOver: false, result: { content: [] } }),
+      managementStart: async (options: any) => {
+        mgmtStarted = true
+        capturedOptions = options
+        return { url: 'http://127.0.0.1:9999' }
+      },
+      managementStop: async () => {
+        mgmtStopped = true
+      },
+      close: async () => undefined,
+    } as any
+
+    const runtime = await startManager(
+      {
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        stateOwner: 'rust',
+        workerOwner: 'rust',
+        managementApiOwner: 'rust',
+      },
+      {
+        sidecarClient: fakeSidecar,
+      },
+    )
+
+    expect(mgmtStarted).toBe(true)
+    expect(capturedOptions.host).toBe('127.0.0.1')
+    expect(capturedOptions.port).toBe(0)
+    expect(capturedOptions.mcpUrl).toBeTruthy()
+    expect(runtime.managementUrl).toBe('http://127.0.0.1:9999')
+
+    await runtime.close()
+    expect(mgmtStopped).toBe(true)
   })
 })

@@ -2,6 +2,9 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { createInterface } from 'node:readline'
 import { UpstreamCallError } from '@dc-manager/router'
 import type { ProxyWorkerClient, WorkerToolResult, WorkerToolsResult } from '@dc-manager/mcp-proxy'
+import type { EventRecord, RouteContext, SessionBinding, WorkerDescriptor, WorkerRecord } from '@dc-manager/shared'
+import type { EventInput } from './manager-state.js'
+import type { ProxyCallToolResult, ProxyListToolsResult } from './mcp-proxy-backend.js'
 
 export type CapabilityOwner = 'node' | 'rust' | 'shadow'
 
@@ -96,6 +99,17 @@ export interface WorkerCallToolResult {
   isError?: boolean
 }
 
+export interface ManagementStartOptions {
+  host?: string
+  port?: number
+  dashboardDir?: string
+  mcpUrl?: string
+}
+
+export interface ManagementStartResult {
+  url: string
+}
+
 export interface WorkerStateEvent {
   workerId: string
   state: string
@@ -150,7 +164,11 @@ export class NativeSidecarClient {
     const child = spawn(executablePath, ['sidecar'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
-      env: env ? { ...process.env, ...env } : process.env,
+      env: {
+        ...process.env,
+        NODE_EXE: process.execPath,
+        ...env,
+      },
     })
 
     return new Promise((resolve, reject) => {
@@ -218,12 +236,12 @@ export class NativeSidecarClient {
 
     if (msg.error) {
       const failureKind = msg.error.failureKind ?? 'UPSTREAM_ERROR'
-      pending.reject(
-        new UpstreamCallError(
-          failureKind,
-          `Sidecar error [${msg.error.code}]: ${msg.error.message}`,
-        ),
+      const err = new UpstreamCallError(
+        failureKind,
+        msg.error.message || `Sidecar error [${msg.error.code}]`,
       )
+      ;(err as unknown as { code?: string }).code = msg.error.code
+      pending.reject(err)
     } else {
       pending.resolve(msg.result)
     }
@@ -300,6 +318,78 @@ export class NativeSidecarClient {
 
   async workerShutdownAll(): Promise<void> {
     return this.request<void>('worker/shutdownAll', {})
+  }
+
+  async backendOpen(databasePath: string, runtimeRoot: string): Promise<void> {
+    await this.request<void>('backend/open', { databasePath, runtimeRoot })
+  }
+
+  async backendClose(): Promise<void> {
+    await this.request<void>('backend/close', {})
+  }
+
+  async proxyListTools(
+    context: RouteContext,
+    meta?: Record<string, unknown>,
+  ): Promise<ProxyListToolsResult> {
+    return this.request<ProxyListToolsResult>('proxy/listTools', { context, meta })
+  }
+
+  async proxyCallTool(
+    context: RouteContext,
+    name: string,
+    args: Record<string, unknown>,
+    meta?: Record<string, unknown>,
+  ): Promise<ProxyCallToolResult> {
+    return this.request<ProxyCallToolResult>('proxy/callTool', {
+      context,
+      name,
+      arguments: args,
+      meta,
+    })
+  }
+
+  async stateGetWorker(workerId: string): Promise<WorkerRecord | undefined> {
+    const res = await this.request<{ worker: WorkerRecord | null }>('state/getWorker', {
+      workerId,
+    })
+    return res.worker ?? undefined
+  }
+
+  async stateListWorkers(): Promise<WorkerDescriptor[]> {
+    const res = await this.request<{ workers: WorkerDescriptor[] }>('state/listWorkers', {})
+    return res.workers
+  }
+
+  async stateListSessions(): Promise<SessionBinding[]> {
+    const res = await this.request<{ sessions: SessionBinding[] }>('state/listSessions', {})
+    return res.sessions
+  }
+
+  async stateListEvents(limit?: number): Promise<EventRecord[]> {
+    const res = await this.request<{ events: EventRecord[] }>('state/listEvents', { limit })
+    return res.events
+  }
+
+  async stateAppendEvent(event: EventInput): Promise<EventRecord> {
+    const res = await this.request<{ event: EventRecord }>('state/appendEvent', { event })
+    return res.event
+  }
+
+  async stateSetWorkerEnabled(workerId: string, enabled: boolean): Promise<WorkerRecord | undefined> {
+    const res = await this.request<{ worker: WorkerRecord | null }>('state/setWorkerEnabled', {
+      workerId,
+      enabled,
+    })
+    return res.worker ?? undefined
+  }
+
+  async managementStart(options: ManagementStartOptions = {}): Promise<ManagementStartResult> {
+    return this.request<ManagementStartResult>('management/start', options)
+  }
+
+  async managementStop(): Promise<void> {
+    await this.request<void>('management/stop', {})
   }
 
   async close(): Promise<void> {

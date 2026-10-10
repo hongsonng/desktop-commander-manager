@@ -1,7 +1,8 @@
+import { existsSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { startManager } from './main.js'
-import type { CapabilityOwner, ManagerConfig } from './config.js'
+import type { CapabilityOwner, ManagerConfig, ManagementApiOwner, StateOwner } from './config.js'
 
 export {
   WINDOWS_AUTOSTART_TASK_NAME,
@@ -30,10 +31,59 @@ export function parseCapabilityOwner(
   throw new Error(`Invalid ${varName} "${value}". Valid options are: node, rust, shadow.`)
 }
 
+export function parseStateOwner(
+  value: string | undefined,
+  defaultValue: StateOwner = 'node',
+  varName = 'DCM_STATE_OWNER',
+): StateOwner {
+  if (!value) return defaultValue
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'node' || normalized === 'rust') {
+    return normalized
+  }
+  throw new Error(`Invalid ${varName} "${value}". Valid options are: node, rust.`)
+}
+
+export function parseManagementApiOwner(
+  value: string | undefined,
+  defaultValue: ManagementApiOwner = 'node',
+  varName = 'DCM_MANAGEMENT_API_OWNER',
+): ManagementApiOwner {
+  if (!value) return defaultValue
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'node' || normalized === 'rust') {
+    return normalized
+  }
+  throw new Error(`Invalid ${varName} "${value}". Valid options are: node, rust.`)
+}
+
+export function validateManagerConfig(config: ManagerConfig): void {
+  if (config.managementApiOwner === 'rust') {
+    if (config.stateOwner !== 'rust') {
+      throw new Error('managementApiOwner="rust" requires stateOwner="rust"')
+    }
+    if (config.workerOwner !== 'rust') {
+      throw new Error('managementApiOwner="rust" requires workerOwner="rust"')
+    }
+  }
+  if (config.stateOwner === 'rust' && config.workerOwner !== 'rust') {
+    throw new Error('stateOwner="rust" requires workerOwner="rust"')
+  }
+  if (
+    (config.managementApiOwner === 'rust' || config.stateOwner === 'rust' || config.workerOwner === 'rust') &&
+    config.nativeSidecarPath &&
+    !existsSync(config.nativeSidecarPath)
+  ) {
+    throw new Error(`Native sidecar executable not found at "${config.nativeSidecarPath}"`)
+  }
+}
+
 export function createDefaultManagerConfig(root = process.cwd(), env = process.env): ManagerConfig {
   const repoRoot = resolve(root)
   const platformOwner = parseCapabilityOwner(env.DCM_PLATFORM_OWNER, 'rust', 'DCM_PLATFORM_OWNER')
   const workerOwner = parseCapabilityOwner(env.DCM_WORKER_OWNER, 'node', 'DCM_WORKER_OWNER')
+  const stateOwner = parseStateOwner(env.DCM_STATE_OWNER, 'node', 'DCM_STATE_OWNER')
+  const managementApiOwner = parseManagementApiOwner(env.DCM_MANAGEMENT_API_OWNER, 'node', 'DCM_MANAGEMENT_API_OWNER')
   const nativeSidecarPath = env.DCM_NATIVE_SIDECAR_PATH ?? join(repoRoot, 'target', 'release', 'dcm-manager.exe')
 
   return {
@@ -44,6 +94,8 @@ export function createDefaultManagerConfig(root = process.cwd(), env = process.e
     managementPort: 8788,
     platformOwner,
     workerOwner,
+    stateOwner,
+    managementApiOwner,
     nativeSidecarPath,
   }
 }
