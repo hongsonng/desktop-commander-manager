@@ -41,6 +41,7 @@ class ExistingStdioTransport implements Transport {
     this.started = true;
     this.handle.stdout.on("data", this.onData);
     this.handle.stdout.on("error", this.onStreamError);
+    this.handle.stdin.on("error", this.onStreamError);
     void this.handle.exited.then(() => this.remoteClosed());
   }
 
@@ -69,6 +70,7 @@ class ExistingStdioTransport implements Transport {
     this.closed = true;
     this.handle.stdout.off("data", this.onData);
     this.handle.stdout.off("error", this.onStreamError);
+    this.handle.stdin.off("error", this.onStreamError);
     this.readBuffer.clear();
     this.onclose?.();
   }
@@ -78,6 +80,7 @@ class ExistingStdioTransport implements Transport {
     this.closed = true;
     this.handle.stdout.off("data", this.onData);
     this.handle.stdout.off("error", this.onStreamError);
+    this.handle.stdin.off("error", this.onStreamError);
     this.onclose?.();
   }
 }

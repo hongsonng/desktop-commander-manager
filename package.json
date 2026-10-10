@@ -15,12 +15,22 @@
     "autostart:uninstall": "tsx apps/server/src/autostart-cli.ts uninstall",
     "autostart:status": "tsx apps/server/src/autostart-cli.ts status",
     "tunnel:setup": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/setup-tunnel.ps1",
-    "smoke:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1"
+    "smoke:windows": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/smoke-windows.ps1",
+    "benchmark:node": "tsx tests/benchmarks/node-baseline.ts",
+    "benchmark:m1": "tsx tests/benchmarks/m1-platform-benchmark.ts",
+    "test:contracts": "vitest run tests/contracts",
+    "test:recovery": "vitest run tests/recovery",
+    "build:rust": "cargo build --workspace --release",
+    "test:rust": "cargo test --workspace",
+    "lint:rust": "cargo fmt --check && cargo clippy --workspace --all-targets --all-features -- -D warnings"
   },
   "devDependencies": {
-    "typescript": "^5.9.3",
-    "vitest": "^5.0.2",
     "@types/node": "^22.18.6",
-    "tsx": "^4.23.15"
+    "tsx": "^4.23.15",
+    "typescript": "^5.9.3",
+    "vitest": "^5.0.2"
+  },
+  "dependencies": {
+    "@wonderwhy-er/desktop-commander": "0.2.52"
   }
 }

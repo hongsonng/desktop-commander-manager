@@ -1,0 +1,63 @@
+name: CI & Build
+
+on:
+  push:
+    branches:
+      - main
+      - dev
+  pull_request:
+    branches:
+      - main
+      - dev
+  workflow_dispatch:
+
+jobs:
+  validate-and-build:
+    name: Build & Test (Windows x64)
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Install Node dependencies
+        run: npm ci
+
+      - name: Check Rust formatting
+        run: cargo fmt --check
+
+      - name: Run Clippy linter
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Build Rust binaries (Release)
+        run: cargo build --workspace --release
+
+      - name: Run Rust workspace tests
+        run: cargo test --workspace
+
+      - name: Build TypeScript & Dashboard
+        run: npm run build
+
+      - name: Run Vitest test suite
+        run: npm test
+
+      - name: Upload dcm-manager.exe artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dcm-manager-windows-x64
+          path: target/release/dcm-manager.exe
+          if-no-files-found: error

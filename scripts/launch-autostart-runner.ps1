@@ -18,8 +18,9 @@ function Write-BootstrapLog([string]$Message) {
     Add-Content -Path $LogPath -Value "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Message" -Encoding UTF8
 }
 
-$powershell = Join-Path $env:SystemRoot 'System32\WindowsPowerShell\v1.0\powershell.exe'
-$commandLine = "`"$powershell`" -NoProfile -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$Runner`""
+$wscript = Join-Path $env:SystemRoot 'System32\wscript.exe'
+$launcher = Join-Path $PSScriptRoot 'run-headless.vbs'
+$commandLine = "`"$wscript`" //B //Nologo `"$launcher`" `"$Runner`""
 $lastError = $null
 
 for ($attempt = 1; $attempt -le 15; $attempt++) {

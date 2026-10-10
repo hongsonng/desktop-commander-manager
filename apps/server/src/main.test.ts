@@ -56,4 +56,33 @@ describe('startManager', () => {
     expect(processes.stopped).toContain(501)
     await runtime.close()
   })
+
+  it('initializes with platformOwner="rust" and sidecar override', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    const fakeSidecar = {
+      snapshot: async () => ({
+        manager: { rootPid: 123, memoryBytes: 1000, cpuSeconds: 1, processCount: 1 },
+        tunnel: { rootPid: null, memoryBytes: 0, cpuSeconds: 0, processCount: 0 },
+        workers: [],
+      }),
+      close: async () => undefined,
+    } as any
+
+    const runtime = await startManager(
+      {
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        platformOwner: 'rust',
+      },
+      {
+        processFactory: new FakeProcesses(),
+        workerClientFactory: new FakeWorkerClients(),
+        sidecarClient: fakeSidecar,
+      },
+    )
+    expect(runtime.managementUrl).toBeTruthy()
+    await runtime.close()
+  })
 })

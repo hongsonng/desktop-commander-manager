@@ -1,0 +1,18 @@
+[package]
+name = "manager-windows"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+manager-protocol = { path = "../manager-protocol" }
+manager-platform = { path = "../manager-platform" }
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
+[dev-dependencies]
+serde.workspace = true
+serde_json.workspace = true
