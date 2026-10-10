@@ -108,7 +108,7 @@ export function createDesktopCommanderProcessFactory(): DesktopCommanderProcessF
       });
       mkdirSync(logs, { recursive: true });
 
-      const spawnSpec = resolveDesktopCommanderSpawnSpec(root);
+      const spawnSpec = resolveDesktopCommanderSpawnSpec(process.cwd());
       const child = spawn(spawnSpec.command, spawnSpec.args, {
         env: buildWorkerEnvironment(root),
         stdio: ["pipe", "pipe", "pipe"],

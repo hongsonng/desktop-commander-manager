@@ -1,0 +1,58 @@
+{
+  "env": {
+    "os": "win32",
+    "osRelease": "10.0.26300",
+    "logicalCpus": 6,
+    "totalMemoryBytes": 34124111872,
+    "nodeVersion": "v24.11.1",
+    "commitSha": "609de0b8fb95dd213901cf910b5eba61ec7ed92e",
+    "timestamp": "2026-10-10T03:58:29.284Z"
+  },
+  "timestamp": "2026-10-10T03:59:34.027Z",
+  "warmRecovery": {
+    "count": 10,
+    "min": 1414.2001,
+    "median": 1419.4941000000035,
+    "p95": 1575.798499999999,
+    "p99": 1575.798499999999,
+    "max": 1575.798499999999,
+    "mean": 1441.5957200000003
+  },
+  "harnessRecovery": {
+    "count": 25,
+    "min": 78.03030000000581,
+    "median": 80.50819999999658,
+    "p95": 83.42259999999806,
+    "p99": 88.53789999999572,
+    "max": 88.53789999999572,
+    "mean": 80.92702800000028
+  },
+  "routing": {
+    "listTools": {
+      "count": 200,
+      "min": 12.769000000000233,
+      "median": 24.314399999995658,
+      "p95": 26.92740000000049,
+      "p99": 28.808899999996356,
+      "max": 29.81980000000476,
+      "mean": 23.800749999999827
+    },
+    "callTool": {
+      "count": 200,
+      "min": 11.688800000003539,
+      "median": 13.603800000004412,
+      "p95": 23.749100000000908,
+      "p99": 25.397799999998824,
+      "max": 26.42710000000079,
+      "mean": 14.48109550000023
+    }
+  },
+  "gates": {
+    "warmWorkerPass": true,
+    "recoveryMedianImprovementPercent": 58.54366632337972,
+    "recoveryGatePass": true,
+    "routingP95RegressionPercent": -21.099335548169744,
+    "routingP99RegressionPercent": -34.28771021992542,
+    "routingGatePass": true
+  }
+}

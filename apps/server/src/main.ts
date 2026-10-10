@@ -118,6 +118,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     }
 
     sidecarClient.onWorkerStateChanged((event) => {
+      if (event.state === 'BUSY') return
       const mappedStatus = stateMap[event.state] ?? 'DEGRADED'
       database.workers.setWorkerState(event.workerId, {
         status: mappedStatus,
@@ -140,8 +141,12 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     const startRustWorker = async (workerId: string): Promise<void> => {
       const runtimeDir = join(config.runtimeRoot, workerId)
       const spec = resolveDesktopCommanderSpawnSpec(process.cwd())
-      const command = spec.command
-      const args = spec.args
+      const customCommand = process.env.DCM_WORKER_COMMAND
+      const customArgs = process.env.DCM_WORKER_ARGS
+        ? JSON.parse(process.env.DCM_WORKER_ARGS)
+        : undefined
+      const command = customCommand ?? spec.command
+      const args = customArgs ?? spec.args
       const env = buildWorkerEnvironment(runtimeDir) as Record<string, string>
 
       const handle = await sidecarClient!.workerStart({
