@@ -140,6 +140,18 @@ fn get_or_init_supervisor<'a>(
     Ok(supervisor_slot.as_ref().unwrap())
 }
 
+fn get_active_supervisor<'a>(
+    backend: &'a Option<crate::backend::ManagerBackend>,
+    supervisor_slot: &'a mut Option<WorkerSupervisor>,
+    platform: &Arc<dyn ProcessPlatform>,
+    stdout_tx: &mpsc::Sender<String>,
+) -> Result<&'a WorkerSupervisor, SidecarError> {
+    if let Some(b) = backend.as_ref() {
+        return Ok(b.supervisor());
+    }
+    get_or_init_supervisor(supervisor_slot, platform, stdout_tx)
+}
+
 async fn handle_envelope(
     platform: &Arc<dyn ProcessPlatform>,
     supervisor: &mut Option<WorkerSupervisor>,
@@ -185,7 +197,7 @@ async fn handle_envelope(
             },
         },
         SidecarRequest::WorkerStart(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -226,7 +238,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerStop(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -257,7 +269,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerRestart(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -288,7 +300,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerListTools(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -319,7 +331,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerCallTool(req) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {
@@ -356,7 +368,7 @@ async fn handle_envelope(
             }
         }
         SidecarRequest::WorkerShutdownAll(_) => {
-            let sup = match get_or_init_supervisor(supervisor, platform, stdout_tx) {
+            let sup = match get_active_supervisor(backend, supervisor, platform, stdout_tx) {
                 Ok(s) => s,
                 Err(e) => {
                     return SidecarReply {

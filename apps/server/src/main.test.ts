@@ -85,4 +85,91 @@ describe('startManager', () => {
     expect(runtime.managementUrl).toBeTruthy()
     await runtime.close()
   })
+
+  it('rejects stateOwner="rust" when workerOwner is not "rust"', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    await expect(
+      startManager({
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        stateOwner: 'rust',
+        workerOwner: 'node',
+      }),
+    ).rejects.toThrow(/stateOwner="rust" requires workerOwner="rust"/i)
+  })
+
+  it('initializes with stateOwner="rust", delegating DB and routing exclusively to sidecar', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'dc-main-')); roots.push(root)
+    let opened = false
+    let closed = false
+    const fakeSidecar = {
+      backendOpen: async () => { opened = true },
+      backendClose: async () => { closed = true },
+      stateListWorkers: async () => [
+        {
+          id: 'worker-1',
+          name: 'worker-1',
+          enabled: true,
+          status: 'READY',
+          pid: 101,
+          failureCount: 0,
+          lastHeartbeatAt: null,
+          createdAt: '2026-10-10T00:00:00.000Z',
+          updatedAt: '2026-10-10T00:00:00.000Z',
+          activeSessionCount: 0,
+        },
+      ],
+      stateGetWorker: async (id: string) => ({
+        id,
+        name: id,
+        enabled: true,
+        status: 'READY',
+        pid: 101,
+        failureCount: 0,
+        lastHeartbeatAt: null,
+        createdAt: '2026-10-10T00:00:00.000Z',
+        updatedAt: '2026-10-10T00:00:00.000Z',
+      }),
+      stateListSessions: async () => [],
+      stateListEvents: async () => [],
+      stateAppendEvent: async () => ({
+        id: 1,
+        sessionId: null,
+        workerId: null,
+        type: 'TEST',
+        message: 'test',
+        metadataJson: null,
+        createdAt: '2026-10-10T00:00:00.000Z',
+      }),
+      proxyListTools: async () => ({ workerId: 'worker-1', result: { tools: [] } }),
+      proxyCallTool: async () => ({ workerId: 'worker-1', failedOver: false, result: { content: [] } }),
+      close: async () => undefined,
+    } as any
+
+    const runtime = await startManager(
+      {
+        databasePath: join(root, 'manager.db'),
+        runtimeRoot: join(root, 'workers'),
+        mcpPort: 0,
+        managementPort: 0,
+        stateOwner: 'rust',
+        workerOwner: 'rust',
+      },
+      {
+        sidecarClient: fakeSidecar,
+      },
+    )
+
+    expect(opened).toBe(true)
+    // Node must NOT open SQLite directly when stateOwner="rust"
+    expect(runtime.database).toBeUndefined()
+    expect(await runtime.state.listWorkers()).toHaveLength(1)
+    expect(runtime.mcpUrl).toBeTruthy()
+    expect(runtime.managementUrl).toBeTruthy()
+
+    await runtime.close()
+    expect(closed).toBe(true)
+  })
 })

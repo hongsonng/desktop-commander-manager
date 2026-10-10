@@ -55,6 +55,9 @@ pub struct ManagerBackend {
 }
 
 impl ManagerBackend {
+    pub fn supervisor(&self) -> &WorkerSupervisor {
+        &self.supervisor
+    }
     pub async fn open(
         database_path: &Path,
         runtime_root: &Path,

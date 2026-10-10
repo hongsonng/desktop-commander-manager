@@ -25,8 +25,10 @@ import {
 import { DEFAULT_MANAGEMENT_PORT, DEFAULT_MCP_PORT, type ManagerConfig } from './config.js'
 import type { ManagerStateProvider } from './manager-state.js'
 import { NodeManagerStateProvider } from './node-manager-state.js'
+import { RustManagerStateProvider } from './rust-manager-state.js'
 import type { McpProxyBackend } from './mcp-proxy-backend.js'
 import { NodeMcpProxyBackend } from './node-mcp-proxy-backend.js'
+import { RustMcpProxyBackend } from './rust-mcp-proxy-backend.js'
 
 interface WorkerClientFactory {
   connect(handle: WorkerProcessHandle, workerId: string): Promise<ProxyWorkerClient>
@@ -68,19 +70,14 @@ export function resolveSidecarExecutablePath(configured?: string): string {
 }
 
 export async function startManager(config: ManagerConfig, overrides: Overrides = {}): Promise<ManagerRuntime> {
-  mkdirSync(dirname(config.databasePath), { recursive: true })
-  mkdirSync(config.runtimeRoot, { recursive: true })
-
-  const database = createDatabase(config.databasePath)
-  database.reconcileRuntimeState()
-  if (database.workers.listWorkers().length === 0) {
-    const now = new Date().toISOString()
-    database.workers.upsertWorker(defaultWorker('worker-1', now))
-    database.workers.upsertWorker(defaultWorker('worker-2', now))
-  }
-
   const platformOwner = config.platformOwner ?? 'node'
   const workerOwner = config.workerOwner ?? 'node'
+  const stateOwner = config.stateOwner ?? 'node'
+
+  if (stateOwner === 'rust' && workerOwner !== 'rust') {
+    throw new Error('stateOwner="rust" requires workerOwner="rust"')
+  }
+
   let sidecarClient = overrides.sidecarClient ?? null
   const shouldCloseSidecar = !overrides.sidecarClient
 
@@ -89,15 +86,19 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     (platformOwner === 'rust' ||
       platformOwner === 'shadow' ||
       workerOwner === 'rust' ||
-      workerOwner === 'shadow')
+      workerOwner === 'shadow' ||
+      stateOwner === 'rust')
   ) {
     const sidecarPath = resolveSidecarExecutablePath(config.nativeSidecarPath)
+    if ((platformOwner === 'rust' || workerOwner === 'rust' || stateOwner === 'rust') && !existsSync(sidecarPath)) {
+      throw new Error(`Native sidecar executable not found at "${sidecarPath}"`)
+    }
     try {
       sidecarClient = await NativeSidecarClient.start(sidecarPath, {
         DCM_RUNTIME_ROOT: config.runtimeRoot,
       })
     } catch (sidecarErr) {
-      if (platformOwner === 'rust' || workerOwner === 'rust') {
+      if (platformOwner === 'rust' || workerOwner === 'rust' || stateOwner === 'rust') {
         throw new Error(
           `Failed to start native sidecar for owner="rust": ${sidecarErr}`,
         )
@@ -109,23 +110,58 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     }
   }
 
-  const clients = new Map<string, ProxyWorkerClient>()
+  mkdirSync(dirname(config.databasePath), { recursive: true })
+  mkdirSync(config.runtimeRoot, { recursive: true })
 
-  let workerManager: WorkerManager | undefined
+  let database: ManagerDatabase | undefined
+  let state: ManagerStateProvider
+  let proxyBackend: McpProxyBackend
   let actions: {
     restart(id: string): Promise<void>
     enable(id: string): Promise<void>
     disable(id: string): Promise<void>
   }
-  let routableWorkers: {
-    getHealthyWorkers(): ReturnType<WorkerManager['getHealthyWorkers']>
-    restartWorker(id: string): Promise<void>
-  }
+  let workerManager: WorkerManager | undefined
+  const clients = new Map<string, ProxyWorkerClient>()
 
-  if (workerOwner === 'rust') {
+  if (stateOwner === 'rust') {
     if (!sidecarClient) {
-      throw new Error('Native sidecar client is required when workerOwner is "rust"')
+      throw new Error('Native sidecar client is required when stateOwner is "rust"')
     }
+    await sidecarClient.backendOpen(config.databasePath, config.runtimeRoot)
+    state = new RustManagerStateProvider(sidecarClient)
+    proxyBackend = new RustMcpProxyBackend(sidecarClient)
+
+    actions = {
+      async restart(id: string) {
+        await sidecarClient!.workerRestart({ workerId: id })
+      },
+      async enable(id: string) {
+        await sidecarClient!.workerRestart({ workerId: id })
+      },
+      async disable(id: string) {
+        await sidecarClient!.workerStop({ workerId: id })
+      },
+    }
+  } else {
+    database = createDatabase(config.databasePath)
+    database.reconcileRuntimeState()
+    if (database.workers.listWorkers().length === 0) {
+      const now = new Date().toISOString()
+      database.workers.upsertWorker(defaultWorker('worker-1', now))
+      database.workers.upsertWorker(defaultWorker('worker-2', now))
+    }
+    state = new NodeManagerStateProvider(database)
+
+    let routableWorkers: {
+      getHealthyWorkers(): ReturnType<WorkerManager['getHealthyWorkers']>
+      restartWorker(id: string): Promise<void>
+    }
+
+    if (workerOwner === 'rust') {
+      if (!sidecarClient) {
+        throw new Error('Native sidecar client is required when workerOwner is "rust"')
+      }
 
     const stateMap: Record<string, 'READY' | 'BUSY' | 'DEGRADED' | 'STOPPED' | 'OFFLINE' | 'DISABLED' | 'STARTING'> = {
       READY: 'READY',
@@ -291,14 +327,14 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
     }
   }
 
-  const state = new NodeManagerStateProvider(database)
   const sessionRouter = new SessionRouter({ database, workerManager: routableWorkers })
   const retryPolicy = new RetryPolicy()
-  const proxyBackend = new NodeMcpProxyBackend(sessionRouter, retryPolicy, (workerId) => {
+  proxyBackend = new NodeMcpProxyBackend(sessionRouter, retryPolicy, (workerId) => {
     const client = clients.get(workerId)
     if (!client) throw new UpstreamCallError('PRE_DISPATCH', `Worker client is not connected: ${workerId}`)
     return client
   })
+}
 
   const mcpRuntime = await createMcpHttpServer({
     host: '127.0.0.1',
@@ -327,7 +363,7 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
 
   const rustCollector = sidecarClient ? createNativeResourceCollector(sidecarClient) : undefined
   const resourceMonitor = createResourceMonitor(
-    () => database.workers.listWorkers().map((worker) => ({ id: worker.id, name: worker.name, pid: worker.pid })),
+    async () => (await state.listWorkers()).map((worker) => ({ id: worker.id, name: worker.name, pid: worker.pid })),
     {
       owner: platformOwner,
       rustCollector,
@@ -363,15 +399,21 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       await mcpRuntime.close().catch(() => undefined)
       for (const client of clients.values()) await client.close().catch(() => undefined)
       clients.clear()
-      if (workerManager) {
-        for (const worker of database.workers.listWorkers()) await workerManager.stopWorker(worker.id).catch(() => undefined)
-      } else if (sidecarClient) {
-        await sidecarClient.workerShutdownAll().catch(() => undefined)
+      if (stateOwner === 'rust') {
+        if (sidecarClient) {
+          await sidecarClient.backendClose().catch(() => undefined)
+        }
+      } else {
+        if (workerManager) {
+          for (const worker of database!.workers.listWorkers()) await workerManager.stopWorker(worker.id).catch(() => undefined)
+        } else if (sidecarClient) {
+          await sidecarClient.workerShutdownAll().catch(() => undefined)
+        }
+        database!.close()
       }
       if (sidecarClient && shouldCloseSidecar) {
         await sidecarClient.close().catch(() => undefined)
       }
-      database.close()
     },
   }
 }
