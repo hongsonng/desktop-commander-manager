@@ -21,11 +21,13 @@ import type {
   WorkerView,
 } from "./types";
 import "./styles.css";
+import "./polish.css";
 
 type ActivityFilter = "ALL" | "READ" | "WRITE" | "COMMAND" | "ERROR";
 type DetailTab = "sessions" | "events";
 type Theme = "dark" | "light";
 type ConnectionState = "live" | "partial" | "stale" | "offline" | "connecting";
+type WorkerDataState = "loading" | "available" | "unavailable";
 
 const POLL_INTERVAL_MS = 2000;
 const STALE_AFTER_MS = 6500;
@@ -245,6 +247,8 @@ export function App() {
     null,
   );
   const [workers, setWorkers] = useState<WorkerView[]>([]);
+  const [workerDataState, setWorkerDataState] =
+    useState<WorkerDataState>("loading");
   const [resources, setResources] = useState<ResourceUsageView | null>(null);
   const [sessions, setSessions] = useState<SessionView[]>([]);
   const [events, setEvents] = useState<EventView[]>([]);
@@ -262,6 +266,7 @@ export function App() {
   );
   const [searchQuery, setSearchQuery] = useState(() => readInitialParam("q"));
   const [detailTab, setDetailTab] = useState<DetailTab>(readInitialTab);
+  const [activeSection, setActiveSection] = useState(() => window.location.hash.slice(1) || "overview");
   const [selectedCall, setSelectedCall] = useState<ToolCallView | null>(null);
   const [copiedValue, setCopiedValue] = useState<string | null>(null);
   const [theme, setTheme] = useState<Theme>(() =>
@@ -305,8 +310,12 @@ export function App() {
     } else failures.push(`connection: ${failureMessage(connectionResult)}`);
     if (workersResult.status === "fulfilled") {
       setWorkers(workersResult.value);
+      setWorkerDataState("available");
       successfulSources += 1;
-    } else failures.push(`workers: ${failureMessage(workersResult)}`);
+    } else {
+      setWorkerDataState("unavailable");
+      failures.push(`workers: ${failureMessage(workersResult)}`);
+    }
     if (resourcesResult.status === "fulfilled") {
       setResources(resourcesResult.value);
       successfulSources += 1;
@@ -363,9 +372,17 @@ export function App() {
     window.history.replaceState(
       {},
       "",
-      `${window.location.pathname}${query ? `?${query}` : ""}`,
+      `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`,
     );
   }, [activityFilter, workerFilter, searchQuery, detailTab]);
+
+  useEffect(() => {
+    const updateActiveSection = () => {
+      setActiveSection(window.location.hash.slice(1) || "overview");
+    };
+    window.addEventListener("hashchange", updateActiveSection);
+    return () => window.removeEventListener("hashchange", updateActiveSection);
+  }, []);
 
   useEffect(() => {
     if (!selectedCall) return;
@@ -452,6 +469,21 @@ export function App() {
   const workerUsage = new Map(
     resources?.items.map((item) => [item.id, item]) ?? [],
   );
+  const activityWindowMs = 60 * 60 * 1000;
+  const recentHourCalls = toolCalls.filter((call) => {
+    const timestamp = new Date(call.createdAt).getTime();
+    return Number.isFinite(timestamp) && timestamp <= now && timestamp > now - activityWindowMs;
+  });
+  const timeline = Array.from({ length: 16 }, (_, index) => {
+    const start = now - activityWindowMs + index * (activityWindowMs / 16);
+    const end = start + activityWindowMs / 16;
+    return recentHourCalls.filter((call) => {
+      const time = new Date(call.createdAt).getTime();
+      return time >= start && time < end;
+    }).length;
+  });
+  const peakActivity = Math.max(1, ...timeline);
+  const recentHourErrors = recentHourCalls.filter((call) => call.status === "ERROR").length;
   const lastUpdatedLabel =
     lastSuccessfulAt === null
       ? "Waiting for first snapshot"
@@ -468,7 +500,7 @@ export function App() {
             : "CONNECTING";
 
   return (
-    <main className="app-shell">
+    <main className="app-shell" id="overview">
       <header className="command-bar">
         <div className="brand-lockup">
           <img
@@ -520,6 +552,55 @@ export function App() {
           </button>
         </div>
       </header>
+
+      <nav className="dashboard-nav" aria-label="Dashboard sections">
+        <div className="nav-links">
+          <a className={activeSection === "overview" ? "nav-current" : ""} href="#overview" onClick={() => setActiveSection("overview")}>Overview</a>
+          <a className={activeSection === "activity" ? "nav-current" : ""} href="#activity" onClick={() => setActiveSection("activity")}>Live activity</a>
+          <a className={activeSection === "workers" ? "nav-current" : ""} href="#workers" onClick={() => setActiveSection("workers")}>Workers</a>
+          <a className={activeSection === "resources" ? "nav-current" : ""} href="#resources" onClick={() => setActiveSection("resources")}>Resources</a>
+          <a className={activeSection === "routing" ? "nav-current" : ""} href="#routing" onClick={() => setActiveSection("routing")}>Routing &amp; audit</a>
+        </div>
+        <span className="nav-meta"><span className="nav-pulse" /> AUTO REFRESH · 2S</span>
+      </nav>
+
+      <section className="hero-panel" aria-label="Operations overview">
+        <div className="hero-copy">
+          <span className="hero-kicker"><span className="hero-kicker-dot" /> SYSTEM OVERVIEW <span className="hero-divider">/</span> LOCAL ENVIRONMENT</span>
+          <h2>Mission control for <span>your workspace.</span></h2>
+          <p>Monitor your agents, inspect tool activity, and manage your local execution stack from one place.</p>
+          <div className="hero-info">
+            <span className={`hero-health hero-health-${connectionState}`}>
+              <span className="status-dot" /> {connectionLabel === "LIVE" ? "All systems connected" : `Connection: ${connectionLabel.toLowerCase()}`}
+            </span>
+            <span>Updated {lastUpdatedLabel}</span>
+          </div>
+        </div>
+        <div className="activity-signal">
+          <div className="signal-topline">
+            <div>
+              <span className="signal-label">RECENT TOOL CALL SAMPLE</span>
+              <div className="signal-value">{recentHourCalls.length}<small> / latest snapshot</small></div>
+            </div>
+            <span className={`signal-indicator${connectionState === "live" ? "" : " is-limited"}`}><span /> {connectionState === "live" ? "LIVE METRICS" : `${connectionLabel} DATA`}</span>
+          </div>
+          <div className="signal-chart" role="img" aria-label={`${recentHourCalls.length} ${recentHourCalls.length === 1 ? "tool call" : "tool calls"} within the past hour in the latest ${toolCalls.length}-call snapshot, ${recentHourErrors} ${recentHourErrors === 1 ? "error" : "errors"}`}>
+            {timeline.map((count, index) => (
+              <span className="signal-bar-slot" key={index}>
+                <span
+                  className={`signal-bar${count ? " has-activity" : ""}`}
+                  style={{ height: `${Math.max(5, (count / peakActivity) * 100)}%` }}
+                />
+              </span>
+            ))}
+          </div>
+          <div className="signal-axis">
+            <span>LATEST {toolCalls.length} {toolCalls.length === 1 ? "CALL" : "CALLS"}</span>
+            <span>{recentHourErrors} ERRORS</span>
+            <span>NOW</span>
+          </div>
+        </div>
+      </section>
 
       <div className="endpoint-bar">
         <div>
@@ -585,7 +666,7 @@ export function App() {
       </section>
 
       <div className="primary-grid">
-        <section className="workspace-panel activity-panel">
+        <section className="workspace-panel activity-panel" id="activity">
           <div className="section-heading">
             <div>
               <p className="eyebrow">CHATGPT ACTIVITY</p>
@@ -725,7 +806,7 @@ export function App() {
           )}
         </section>
 
-        <aside className="worker-rail workspace-panel" aria-label="Workers">
+        <aside className="worker-rail workspace-panel" id="workers" aria-label="Workers">
           <div className="section-heading compact">
             <div>
               <p className="eyebrow">EXECUTION</p>
@@ -736,6 +817,24 @@ export function App() {
             </span>
           </div>
           <div className="worker-list">
+            {workers.length === 0 && workerDataState === "loading" && (
+              <div className="empty-state worker-empty">
+                <strong>Loading workers</strong>
+                <span>Waiting for the first manager snapshot.</span>
+              </div>
+            )}
+            {workers.length === 0 && workerDataState === "unavailable" && (
+              <div className="empty-state worker-empty">
+                <strong>Worker data unavailable</strong>
+                <span>Retry after the manager can report worker details.</span>
+              </div>
+            )}
+            {workers.length === 0 && workerDataState === "available" && (
+              <div className="empty-state worker-empty">
+                <strong>No workers available</strong>
+                <span>Worker details will appear here when the manager reports them.</span>
+              </div>
+            )}
             {workers.map((worker) => (
               <WorkerCard
                 key={worker.id}
@@ -751,7 +850,7 @@ export function App() {
       </div>
 
       <div className="secondary-grid">
-        <section className="workspace-panel resource-panel">
+        <section className="workspace-panel resource-panel" id="resources">
           <div className="section-heading compact">
             <div>
               <p className="eyebrow">SYSTEM</p>
@@ -819,7 +918,7 @@ export function App() {
           </div>
         </section>
 
-        <section className="workspace-panel detail-panel">
+        <section className="workspace-panel detail-panel" id="routing">
           <div
             className="detail-tabs"
             role="tablist"

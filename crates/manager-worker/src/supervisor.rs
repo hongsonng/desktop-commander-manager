@@ -242,41 +242,68 @@ impl WorkerSupervisor {
         let client_monitor = Arc::clone(&client);
         tokio::spawn(async move {
             let exit_code = client_monitor.wait_for_exit().await;
-            this.on_worker_exit(&worker_id_clone, exit_code).await;
+            this.on_worker_exit(&worker_id_clone, &client_monitor, exit_code)
+                .await;
         });
 
         // Perform MCP Handshake
         match client.handshake(handshake_timeout).await {
-            Ok(_) => {
-                let mut workers = self.workers.lock().await;
-                if let Some(worker) = workers.get_mut(id) {
-                    worker
-                        .state_machine
-                        .transition(WorkerLifecycleEvent::HandshakeSucceeded)
-                        .map_err(|source| SupervisorError::InvalidTransition {
-                            id: id.to_string(),
-                            source,
-                        })?;
-                    self.emit_state_event(worker, Some("Handshake ready".into()), None);
-                }
-                Ok(pid)
-            }
+            Ok(_) => self.apply_handshake_success(id, &client, pid).await,
             Err(e) => {
-                let mut workers = self.workers.lock().await;
-                if let Some(worker) = workers.get_mut(id) {
-                    let _ =
-                        worker
-                            .state_machine
-                            .transition(WorkerLifecycleEvent::HandshakeFailed {
-                                reason: e.to_string(),
-                            });
-                    self.emit_state_event(worker, Some(format!("Handshake failed: {e}")), None);
-                    self.schedule_recovery_if_needed(id, worker);
-                }
+                self.apply_handshake_failure(id, &client, &e).await;
                 let _ = client.stop().await;
                 Err(SupervisorError::Client(e))
             }
         }
+    }
+
+    async fn apply_handshake_success(
+        &self,
+        id: &str,
+        client: &Arc<WorkerClient>,
+        pid: u32,
+    ) -> Result<u32, SupervisorError> {
+        let mut workers = self.workers.lock().await;
+        let worker = workers
+            .get_mut(id)
+            .ok_or_else(|| SupervisorError::WorkerNotFound(id.to_string()))?;
+        if !Self::is_current_client(worker, client) {
+            return Err(SupervisorError::NotReady {
+                id: id.to_string(),
+                state: worker.state_machine.state(),
+            });
+        }
+        worker
+            .state_machine
+            .transition(WorkerLifecycleEvent::HandshakeSucceeded)
+            .map_err(|source| SupervisorError::InvalidTransition {
+                id: id.to_string(),
+                source,
+            })?;
+        self.emit_state_event(worker, Some("Handshake ready".into()), None);
+        Ok(pid)
+    }
+
+    async fn apply_handshake_failure(
+        &self,
+        id: &str,
+        client: &Arc<WorkerClient>,
+        error: &WorkerClientError,
+    ) -> bool {
+        let mut workers = self.workers.lock().await;
+        let Some(worker) = workers.get_mut(id) else {
+            return false;
+        };
+        if !Self::is_current_client(worker, client) {
+            return false;
+        }
+        let _ = worker
+            .state_machine
+            .transition(WorkerLifecycleEvent::HandshakeFailed {
+                reason: error.to_string(),
+            });
+        self.emit_state_event(worker, Some(format!("Handshake failed: {error}")), None);
+        true
     }
 
     pub async fn stop_worker(&self, id: &str) -> Result<(), SupervisorError> {
@@ -416,10 +443,15 @@ impl WorkerSupervisor {
         Ok(())
     }
 
-    async fn on_worker_exit(&self, id: &str, exit_code: Option<i32>) {
+    async fn on_worker_exit(
+        &self,
+        id: &str,
+        exited_client: &Arc<WorkerClient>,
+        exit_code: Option<i32>,
+    ) {
         let mut workers = self.workers.lock().await;
         if let Some(worker) = workers.get_mut(id) {
-            if worker.intentional_stop {
+            if worker.intentional_stop || !Self::is_current_client(worker, exited_client) {
                 return;
             }
 
@@ -479,6 +511,13 @@ impl WorkerSupervisor {
         worker.recovery_handle = Some(join_handle.abort_handle());
     }
 
+    fn is_current_client(worker: &ManagedWorker, client: &Arc<WorkerClient>) -> bool {
+        worker
+            .client
+            .as_ref()
+            .is_some_and(|current| Arc::ptr_eq(current, client))
+    }
+
     fn emit_state_event(
         &self,
         worker: &ManagedWorker,
@@ -494,5 +533,139 @@ impl WorkerSupervisor {
             signal: None,
         };
         let _ = self.event_tx.send(event);
+    }
+}
+
+#[cfg(test)]
+mod handshake_generation_tests {
+    use super::*;
+    use std::collections::HashMap;
+    use std::path::PathBuf;
+
+    fn config() -> WorkerLaunchConfig {
+        let script = r#"
+            const readline = require('readline');
+            const rl = readline.createInterface({ input: process.stdin, terminal: false });
+            rl.on('line', (line) => {
+                const req = JSON.parse(line);
+                if (req.method === 'initialize') {
+                    console.log(JSON.stringify({
+                        jsonrpc: '2.0',
+                        id: req.id,
+                        result: { protocolVersion: '2024-11-05', capabilities: {}, serverInfo: { name: 'test' } }
+                    }));
+                }
+            });
+        "#;
+        let runtime_dir = std::env::temp_dir()
+            .join("dcm-test-supervisor")
+            .join("handshake-generation")
+            .join("worker-1");
+        let _ = std::fs::remove_dir_all(&runtime_dir);
+
+        WorkerLaunchConfig {
+            worker_id: "worker-1".into(),
+            command: PathBuf::from("node"),
+            args: vec!["-e".into(), script.into()],
+            env: std::env::vars().collect::<HashMap<_, _>>(),
+            runtime_dir,
+        }
+    }
+
+    #[tokio::test]
+    async fn stale_handshake_outcomes_do_not_mutate_the_replacement() {
+        let supervisor = WorkerSupervisor::new(vec![config()], None, None).expect("supervisor");
+        supervisor.start_worker("worker-1").await.expect("start");
+        let old_client = {
+            let workers = supervisor.workers.lock().await;
+            workers["worker-1"].client.clone().expect("old client")
+        };
+
+        supervisor
+            .restart_worker("worker-1")
+            .await
+            .expect("restart");
+        let replacement_pid = supervisor.get_worker_pid("worker-1").await;
+        let stale_error = WorkerClientError::ack_unknown("stale handshake");
+
+        assert!(
+            !supervisor
+                .apply_handshake_failure("worker-1", &old_client, &stale_error)
+                .await
+        );
+        assert!(supervisor
+            .apply_handshake_success("worker-1", &old_client, old_client.pid())
+            .await
+            .is_err());
+        assert_eq!(
+            supervisor.get_worker_state("worker-1").await,
+            Some(WorkerState::Ready)
+        );
+        assert_eq!(supervisor.get_worker_pid("worker-1").await, replacement_pid);
+
+        supervisor.stop_worker("worker-1").await.expect("stop");
+    }
+
+    #[tokio::test]
+    async fn current_handshake_failure_waits_for_process_exit_before_recovery() {
+        let mut worker_config = config();
+        worker_config.args = vec![
+            "-e".into(),
+            r#"
+                const readline = require('readline');
+                readline.createInterface({ input: process.stdin, terminal: false });
+            "#
+            .into(),
+        ];
+        worker_config.runtime_dir = std::env::temp_dir()
+            .join("dcm-test-supervisor")
+            .join("handshake-recovery-order")
+            .join("worker-1");
+        let _ = std::fs::remove_dir_all(&worker_config.runtime_dir);
+
+        let supervisor =
+            WorkerSupervisor::new(vec![worker_config], None, None).expect("supervisor");
+        let starter = {
+            let supervisor = supervisor.clone();
+            tokio::spawn(async move {
+                supervisor
+                    .start_worker_internal("worker-1", Duration::from_secs(5))
+                    .await
+            })
+        };
+
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+        let current_client = loop {
+            if let Some(client) = {
+                let workers = supervisor.workers.lock().await;
+                workers["worker-1"].client.clone()
+            } {
+                break client;
+            }
+            assert!(
+                tokio::time::Instant::now() < deadline,
+                "worker did not start"
+            );
+            tokio::time::sleep(Duration::from_millis(10)).await;
+        };
+
+        let handshake_error = WorkerClientError::ack_unknown("handshake timeout");
+        assert!(
+            supervisor
+                .apply_handshake_failure("worker-1", &current_client, &handshake_error)
+                .await
+        );
+        let recovery_scheduled_while_alive = {
+            let workers = supervisor.workers.lock().await;
+            workers["worker-1"].recovery_handle.is_some()
+        };
+
+        supervisor.stop_worker("worker-1").await.expect("stop");
+        let _ = tokio::time::timeout(Duration::from_secs(2), starter).await;
+
+        assert!(
+            !recovery_scheduled_while_alive,
+            "recovery must wait until the timed-out process exits"
+        );
     }
 }

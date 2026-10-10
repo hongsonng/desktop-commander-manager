@@ -8,6 +8,8 @@ import { normalizeContractValue } from './normalize.js'
 const roots: string[] = []
 
 afterEach(() => {
+  delete process.env.DCM_WORKER_COMMAND
+  delete process.env.DCM_WORKER_ARGS
   for (const root of roots.splice(0)) {
     if (existsSync(root)) {
       rmSync(root, { recursive: true, force: true })
@@ -19,6 +21,7 @@ describe('state-owner contract parity', () => {
   const releaseExe = resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
   const debugExe = resolve(process.cwd(), 'target', 'debug', 'dcm-manager.exe')
   const exePath = existsSync(releaseExe) ? releaseExe : debugExe
+  const fakeWorker = resolve(process.cwd(), 'tests', 'fakes', 'fake-mcp-worker.mjs')
 
   const owners = ['node', 'rust'] as const
 
@@ -34,6 +37,8 @@ describe('state-owner contract parity', () => {
 
           const root = mkdtempSync(join(tmpdir(), `dcm-state-contract-${stateOwner}-`))
           roots.push(root)
+          process.env.DCM_WORKER_COMMAND = process.execPath
+          process.env.DCM_WORKER_ARGS = JSON.stringify([fakeWorker])
 
           process.env.DCM_SUPERVISOR_MUTEX_NAME = `Local\\DesktopCommanderManager.ContractTest.${stateOwner}.${process.pid}`
 
@@ -111,7 +116,7 @@ describe('state-owner contract parity', () => {
 
             // 6. Tool Call with Sticky Session
             const callTool = await rpc('tools/call', 3, {
-              name: 'get_config',
+              name: 'identify',
               arguments: {},
               _meta: envelope,
             })
@@ -129,7 +134,7 @@ describe('state-owner contract parity', () => {
 
             // 8. Sticky Routing Check: Subsequent call routes to same bound worker
             const callTool2 = await rpc('tools/call', 4, {
-              name: 'get_config',
+              name: 'identify',
               arguments: {},
               _meta: envelope,
             })
@@ -143,7 +148,7 @@ describe('state-owner contract parity', () => {
             expect(toolCalls[0]).toMatchObject({
               sessionId: 'chat-contract-session-1',
               workerId: boundWorkerId,
-              toolName: 'get_config',
+              toolName: 'identify',
               status: 'OK',
               failedOver: false,
             })

@@ -240,4 +240,56 @@ describe("dashboard", () => {
     );
     expect(screen.queryByRole("dialog")).toBeNull();
   });
+
+  it("labels recent activity as a snapshot sample and navigates between dashboard sections", async () => {
+    const user = userEvent.setup();
+    window.history.replaceState({}, "", "/?q=read#workers");
+    vi.mocked(api.getToolCalls).mockResolvedValueOnce([{
+      id: 22,
+      sessionId: "chat-a",
+      workerId: "worker-1",
+      toolName: "read_file",
+      argsSummary: "path=D:/repo/file.txt",
+      status: "ERROR",
+      durationMs: 48,
+      failedOver: false,
+      error: "read failed",
+      createdAt: new Date(Date.now() - 5 * 60 * 1000).toISOString(),
+    }]);
+    render(<App />);
+    expect(await screen.findByRole("img", {
+      name: "1 tool call within the past hour in the latest 1-call snapshot, 1 error",
+    })).toBeTruthy();
+    expect(screen.getByText("RECENT TOOL CALL SAMPLE")).toBeTruthy();
+    expect(screen.getByText("/ latest snapshot")).toBeTruthy();
+    expect(screen.getByText("LATEST 1 CALL")).toBeTruthy();
+
+    const navigation = screen.getByRole("navigation", {
+      name: "Dashboard sections",
+    });
+    const workerLink = within(navigation).getByRole("link", { name: "Workers" });
+    expect(workerLink).toHaveClass("nav-current");
+
+    await user.click(screen.getByRole("button", { name: "Write" }));
+    expect(window.location.hash).toBe("#workers");
+
+    window.location.hash = "#resources";
+    window.dispatchEvent(new HashChangeEvent("hashchange"));
+    await waitFor(() => {
+      expect(
+        within(navigation).getByRole("link", { name: "Resources" }),
+      ).toHaveClass("nav-current");
+    });
+  });
+
+  it("does not report an empty worker pool when the workers request fails", async () => {
+    vi.mocked(api.getWorkers).mockRejectedValueOnce(new Error("workers offline"));
+    render(<App />);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "workers: workers offline",
+    );
+    expect(screen.queryByText("No workers available")).toBeNull();
+    expect(screen.getByText("Worker data unavailable")).toBeTruthy();
+  });
 });
