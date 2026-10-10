@@ -376,6 +376,14 @@ export class NativeSidecarClient {
     return res.event
   }
 
+  async stateSetWorkerEnabled(workerId: string, enabled: boolean): Promise<WorkerRecord | undefined> {
+    const res = await this.request<{ worker: WorkerRecord | null }>('state/setWorkerEnabled', {
+      workerId,
+      enabled,
+    })
+    return res.worker ?? undefined
+  }
+
   async managementStart(options: ManagementStartOptions = {}): Promise<ManagementStartResult> {
     return this.request<ManagementStartResult>('management/start', options)
   }

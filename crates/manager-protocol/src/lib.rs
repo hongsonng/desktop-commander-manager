@@ -76,6 +76,9 @@ pub enum SidecarRequest {
     #[serde(rename = "state/appendEvent")]
     StateAppendEvent(StateAppendEventRequest),
 
+    #[serde(rename = "state/setWorkerEnabled")]
+    StateSetWorkerEnabled(StateSetWorkerEnabledRequest),
+
     #[serde(rename = "management/start")]
     ManagementStart(ManagementStartRequest),
 
@@ -137,6 +140,13 @@ pub struct StateListEventsRequest {
 #[serde(rename_all = "camelCase")]
 pub struct StateAppendEventRequest {
     pub event: EventInput,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StateSetWorkerEnabledRequest {
+    pub worker_id: String,
+    pub enabled: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

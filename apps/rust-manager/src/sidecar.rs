@@ -650,6 +650,35 @@ async fn handle_envelope(
                 },
             }
         }
+        SidecarRequest::StateSetWorkerEnabled(req) => {
+            let b = match backend.as_ref() {
+                Some(b) => b,
+                None => {
+                    return SidecarReply {
+                        id: envelope.id,
+                        result: None,
+                        error: Some(SidecarError::new(
+                            "BACKEND_NOT_OPEN",
+                            "Backend is not open. Call backend/open first.",
+                        )),
+                    };
+                }
+            };
+            match b.set_worker_enabled(&req.worker_id, req.enabled).await {
+                Ok(worker) => SidecarReply {
+                    id: envelope.id,
+                    result: Some(SidecarResult::StateGetWorker(
+                        manager_protocol::StateGetWorkerResult { worker },
+                    )),
+                    error: None,
+                },
+                Err(e) => SidecarReply {
+                    id: envelope.id,
+                    result: None,
+                    error: Some(e),
+                },
+            }
+        }
         SidecarRequest::ManagementStart(req) => {
             let b = match backend.as_ref() {
                 Some(b) => b,

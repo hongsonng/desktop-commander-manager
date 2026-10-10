@@ -423,6 +423,31 @@ impl ManagerBackend {
             .map_err(|e| SidecarError::new("DB_ERROR", e.to_string()))
     }
 
+    pub async fn set_worker_enabled(
+        &self,
+        worker_id: &str,
+        enabled: bool,
+    ) -> Result<Option<WorkerRecord>, SidecarError> {
+        let db = self.db.lock().await;
+        let worker_repo = db.workers();
+        if let Some(mut w) = worker_repo
+            .get(worker_id)
+            .map_err(|e| SidecarError::new("DB_ERROR", e.to_string()))?
+        {
+            w.enabled = enabled;
+            if !enabled {
+                w.status = WorkerStatus::Disabled;
+                w.pid = None;
+            }
+            worker_repo
+                .upsert(&w)
+                .map_err(|e| SidecarError::new("DB_ERROR", e.to_string()))?;
+            Ok(Some(w))
+        } else {
+            Ok(None)
+        }
+    }
+
     pub async fn close(&self) -> Result<(), SidecarError> {
         let _ = self.supervisor.shutdown_all().await;
         Ok(())

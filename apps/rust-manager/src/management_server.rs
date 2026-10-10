@@ -117,11 +117,20 @@ impl WorkerActions for BackendWorkerActions {
                     let _ = db_guard.workers().upsert(&w);
                 }
             }
-            supervisor
+            let pid = supervisor
                 .restart_worker(&wid)
                 .await
-                .map(|_| ())
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            {
+                let db_guard = db.lock().await;
+                if let Ok(Some(mut w)) = db_guard.workers().get(&wid) {
+                    w.status = WorkerStatus::Ready;
+                    w.pid = Some(pid);
+                    w.last_heartbeat_at = Some(chrono::Utc::now().to_rfc3339());
+                    let _ = db_guard.workers().upsert(&w);
+                }
+            }
+            Ok(())
         })
     }
 

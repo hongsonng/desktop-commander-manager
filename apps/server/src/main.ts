@@ -156,13 +156,16 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
 
     actions = {
       async restart(id: string) {
+        await sidecarClient!.stateSetWorkerEnabled(id, true)
         await sidecarClient!.workerRestart({ workerId: id })
       },
       async enable(id: string) {
+        await sidecarClient!.stateSetWorkerEnabled(id, true)
         await sidecarClient!.workerRestart({ workerId: id })
       },
       async disable(id: string) {
         await sidecarClient!.workerStop({ workerId: id })
+        await sidecarClient!.stateSetWorkerEnabled(id, false)
       },
     }
   } else {
