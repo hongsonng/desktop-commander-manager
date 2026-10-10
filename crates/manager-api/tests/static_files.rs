@@ -5,8 +5,9 @@ use manager_api::routes::create_router;
 use manager_api::state::ApiState;
 use manager_db::ManagerDb;
 use std::fs;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use tempfile::tempdir;
+use tokio::sync::Mutex;
 use tower::ServiceExt;
 
 #[tokio::test]

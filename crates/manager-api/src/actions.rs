@@ -18,16 +18,7 @@ pub async fn handle_worker_action(
 ) -> Result<Json<WorkerDescriptorDto>, (StatusCode, Json<ApiErrorDto>)> {
     // 1. Verify worker exists
     let worker_exists = {
-        let db = state.db.lock().map_err(|e| {
-            (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                Json(ApiErrorDto {
-                    error: "DB_LOCK_ERROR".to_string(),
-                    worker_id: Some(id.to_string()),
-                    message: Some(e.to_string()),
-                }),
-            )
-        })?;
+        let db = state.db.lock().await;
 
         db.workers()
             .get(id)
@@ -76,16 +67,7 @@ pub async fn handle_worker_action(
     }
 
     // 3. Return updated worker descriptor
-    let db = state.db.lock().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiErrorDto {
-                error: "DB_LOCK_ERROR".to_string(),
-                worker_id: Some(id.to_string()),
-                message: Some(e.to_string()),
-            }),
-        )
-    })?;
+    let db = state.db.lock().await;
 
     let updated = db
         .workers()

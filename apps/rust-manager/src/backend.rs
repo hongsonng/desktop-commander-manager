@@ -58,6 +58,14 @@ impl ManagerBackend {
     pub fn supervisor(&self) -> &WorkerSupervisor {
         &self.supervisor
     }
+
+    pub fn supervisor_arc(&self) -> Arc<WorkerSupervisor> {
+        self.supervisor.clone()
+    }
+
+    pub fn db(&self) -> &Arc<Mutex<ManagerDb>> {
+        &self.db
+    }
     pub async fn open(
         database_path: &Path,
         runtime_root: &Path,

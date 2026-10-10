@@ -6,7 +6,8 @@ use manager_api::routes::create_router;
 use manager_api::state::{ApiState, BoxFuture, ResourceProvider};
 use manager_db::{EventInput, ManagerDb, SessionBinding, WorkerRecord, WorkerStatus};
 use serde_json::Value;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
+use tokio::sync::Mutex;
 use tower::ServiceExt;
 
 struct FakeResourceProvider;

@@ -1,4 +1,5 @@
-pub mod backend;
+pub use dcm_manager::backend;
+pub use dcm_manager::management_server;
 mod sidecar;
 
 use std::env;

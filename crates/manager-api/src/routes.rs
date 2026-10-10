@@ -47,16 +47,7 @@ async fn connection_handler(State(state): State<ApiState>) -> Json<ConnectionInf
 async fn workers_handler(
     State(state): State<ApiState>,
 ) -> Result<Json<Vec<WorkerDescriptorDto>>, (StatusCode, Json<ApiErrorDto>)> {
-    let db = state.db.lock().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiErrorDto {
-                error: "DB_LOCK_ERROR".to_string(),
-                worker_id: None,
-                message: Some(e.to_string()),
-            }),
-        )
-    })?;
+    let db = state.db.lock().await;
 
     let workers = db.workers().list().map_err(|e| {
         (
@@ -100,16 +91,7 @@ async fn resources_handler(State(state): State<ApiState>) -> Json<ResourceUsageS
 async fn sessions_handler(
     State(state): State<ApiState>,
 ) -> Result<Json<Vec<SessionBindingDto>>, (StatusCode, Json<ApiErrorDto>)> {
-    let db = state.db.lock().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiErrorDto {
-                error: "DB_LOCK_ERROR".to_string(),
-                worker_id: None,
-                message: Some(e.to_string()),
-            }),
-        )
-    })?;
+    let db = state.db.lock().await;
 
     let sessions = db.sessions().list().map_err(|e| {
         (
@@ -138,16 +120,7 @@ async fn sessions_handler(
 async fn events_handler(
     State(state): State<ApiState>,
 ) -> Result<Json<Vec<EventRecordDto>>, (StatusCode, Json<ApiErrorDto>)> {
-    let db = state.db.lock().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiErrorDto {
-                error: "DB_LOCK_ERROR".to_string(),
-                worker_id: None,
-                message: Some(e.to_string()),
-            }),
-        )
-    })?;
+    let db = state.db.lock().await;
 
     let events = db.events().list(Some(200)).map_err(|e| {
         (
@@ -181,16 +154,7 @@ async fn events_handler(
 async fn tool_calls_handler(
     State(state): State<ApiState>,
 ) -> Result<Json<Vec<ToolCallDto>>, (StatusCode, Json<ApiErrorDto>)> {
-    let db = state.db.lock().map_err(|e| {
-        (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(ApiErrorDto {
-                error: "DB_LOCK_ERROR".to_string(),
-                worker_id: None,
-                message: Some(e.to_string()),
-            }),
-        )
-    })?;
+    let db = state.db.lock().await;
 
     let events = db.events().list(Some(500)).map_err(|e| {
         (

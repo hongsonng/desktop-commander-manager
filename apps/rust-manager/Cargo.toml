@@ -12,10 +12,16 @@ manager-windows = { path = "../../crates/manager-windows" }
 manager-worker = { path = "../../crates/manager-worker" }
 manager-db = { path = "../../crates/manager-db" }
 manager-router = { path = "../../crates/manager-router" }
+manager-api = { path = "../../crates/manager-api" }
 chrono.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+axum.workspace = true
+thiserror.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
 
 [dev-dependencies]
 tempfile.workspace = true

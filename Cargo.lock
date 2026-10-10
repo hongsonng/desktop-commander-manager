@@ -170,7 +170,9 @@ dependencies = [
 name = "dcm-manager"
 version = "0.1.0"
 dependencies = [
+ "axum",
  "chrono",
+ "manager-api",
  "manager-db",
  "manager-platform",
  "manager-protocol",
@@ -180,7 +182,9 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
+ "thiserror",
  "tokio",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]

@@ -5,53 +5,75 @@ use manager_api::routes::create_router;
 use manager_api::state::{ApiState, BoxFuture, WorkerActions};
 use manager_db::{ManagerDb, WorkerRecord, WorkerStatePatch, WorkerStatus};
 use serde_json::Value;
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex as StdMutex};
+use tokio::sync::Mutex as TokioMutex;
 use tower::ServiceExt;
 
 #[derive(Default)]
 struct MockActions {
-    calls: Mutex<Vec<String>>,
-    db: Option<Arc<Mutex<ManagerDb>>>,
+    calls: StdMutex<Vec<String>>,
+    db: Option<Arc<TokioMutex<ManagerDb>>>,
 }
 
 impl WorkerActions for MockActions {
     fn restart<'a>(&'a self, worker_id: &'a str) -> BoxFuture<'a, Result<(), String>> {
-        self.calls.lock().unwrap().push(format!("restart:{}", worker_id));
-        if let Some(ref db) = self.db {
-            let db = db.lock().unwrap();
-            let _ = db.workers().set_state(
-                worker_id,
-                WorkerStatePatch::new(WorkerStatus::Ready).with_pid(Some(9999)),
-            );
-        }
-        Box::pin(async { Ok(()) })
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("restart:{}", worker_id));
+        let db = self.db.clone();
+        let wid = worker_id.to_string();
+        Box::pin(async move {
+            if let Some(ref db) = db {
+                let db = db.lock().await;
+                let _ = db.workers().set_state(
+                    &wid,
+                    WorkerStatePatch::new(WorkerStatus::Ready).with_pid(Some(9999)),
+                );
+            }
+            Ok(())
+        })
     }
 
     fn enable<'a>(&'a self, worker_id: &'a str) -> BoxFuture<'a, Result<(), String>> {
-        self.calls.lock().unwrap().push(format!("enable:{}", worker_id));
-        if let Some(ref db) = self.db {
-            let db = db.lock().unwrap();
-            if let Ok(Some(mut w)) = db.workers().get(worker_id) {
-                w.enabled = true;
-                w.status = WorkerStatus::Ready;
-                let _ = db.workers().upsert(&w);
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("enable:{}", worker_id));
+        let db = self.db.clone();
+        let wid = worker_id.to_string();
+        Box::pin(async move {
+            if let Some(ref db) = db {
+                let db = db.lock().await;
+                if let Ok(Some(mut w)) = db.workers().get(&wid) {
+                    w.enabled = true;
+                    w.status = WorkerStatus::Ready;
+                    let _ = db.workers().upsert(&w);
+                }
             }
-        }
-        Box::pin(async { Ok(()) })
+            Ok(())
+        })
     }
 
     fn disable<'a>(&'a self, worker_id: &'a str) -> BoxFuture<'a, Result<(), String>> {
-        self.calls.lock().unwrap().push(format!("disable:{}", worker_id));
-        if let Some(ref db) = self.db {
-            let db = db.lock().unwrap();
-            if let Ok(Some(mut w)) = db.workers().get(worker_id) {
-                w.enabled = false;
-                w.status = WorkerStatus::Disabled;
-                w.pid = None;
-                let _ = db.workers().upsert(&w);
+        self.calls
+            .lock()
+            .unwrap()
+            .push(format!("disable:{}", worker_id));
+        let db = self.db.clone();
+        let wid = worker_id.to_string();
+        Box::pin(async move {
+            if let Some(ref db) = db {
+                let db = db.lock().await;
+                if let Ok(Some(mut w)) = db.workers().get(&wid) {
+                    w.enabled = false;
+                    w.status = WorkerStatus::Disabled;
+                    w.pid = None;
+                    let _ = db.workers().upsert(&w);
+                }
             }
-        }
-        Box::pin(async { Ok(()) })
+            Ok(())
+        })
     }
 }
 
@@ -76,11 +98,11 @@ async fn post_json(router: &axum::Router, uri: &str) -> (StatusCode, Value) {
 
 #[tokio::test]
 async fn test_worker_action_success_and_unknown_worker_404() {
-    let db = Arc::new(Mutex::new(ManagerDb::open_in_memory().unwrap()));
+    let db = Arc::new(TokioMutex::new(ManagerDb::open_in_memory().unwrap()));
     let now = "2026-09-29T00:00:00.000Z".to_string();
 
     db.lock()
-        .unwrap()
+        .await
         .workers()
         .upsert(&WorkerRecord {
             id: "worker-1".to_string(),
@@ -96,7 +118,7 @@ async fn test_worker_action_success_and_unknown_worker_404() {
         .unwrap();
 
     let mock_actions = Arc::new(MockActions {
-        calls: Mutex::new(Vec::new()),
+        calls: StdMutex::new(Vec::new()),
         db: Some(db.clone()),
     });
 
@@ -137,7 +159,8 @@ async fn test_worker_action_success_and_unknown_worker_404() {
 
     // 4. Unknown worker actions -> 404 with exact contract shape
     for action in &["restart", "enable", "disable"] {
-        let (status, err) = post_json(&router, &format!("/api/workers/unknown-worker/{}", action)).await;
+        let (status, err) =
+            post_json(&router, &format!("/api/workers/unknown-worker/{}", action)).await;
         assert_eq!(status, StatusCode::NOT_FOUND);
         assert_eq!(err["error"], "WORKER_NOT_FOUND");
         assert_eq!(err["workerId"], "unknown-worker");
@@ -153,11 +176,11 @@ async fn test_worker_action_success_and_unknown_worker_404() {
 
 #[tokio::test]
 async fn test_concurrent_worker_actions_serialize_cleanly() {
-    let db = Arc::new(Mutex::new(ManagerDb::open_in_memory().unwrap()));
+    let db = Arc::new(TokioMutex::new(ManagerDb::open_in_memory().unwrap()));
     let now = "2026-09-29T00:00:00.000Z".to_string();
 
     db.lock()
-        .unwrap()
+        .await
         .workers()
         .upsert(&WorkerRecord {
             id: "worker-1".to_string(),
@@ -173,7 +196,7 @@ async fn test_concurrent_worker_actions_serialize_cleanly() {
         .unwrap();
 
     let mock_actions = Arc::new(MockActions {
-        calls: Mutex::new(Vec::new()),
+        calls: StdMutex::new(Vec::new()),
         db: Some(db.clone()),
     });
 
