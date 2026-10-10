@@ -20,6 +20,7 @@
     "benchmark:m1": "tsx tests/benchmarks/m1-platform-benchmark.ts",
     "benchmark:m4": "tsx tests/benchmarks/m4-state-router-benchmark.ts",
     "benchmark:m5": "tsx tests/benchmarks/m5-management-api-benchmark.ts",
+    "benchmark:m6": "tsx tests/benchmarks/m6-stop-review-benchmark.ts",
     "test:contracts": "vitest run tests/contracts",
     "test:recovery": "vitest run tests/recovery",
     "build:rust": "cargo build --workspace --release",
