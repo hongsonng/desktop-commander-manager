@@ -7,6 +7,8 @@ import { startManager, type ManagerRuntime } from '../../apps/server/src/main.js
 const roots: string[] = []
 
 afterEach(() => {
+  delete process.env.DCM_WORKER_COMMAND
+  delete process.env.DCM_WORKER_ARGS
   for (const root of roots.splice(0)) {
     if (existsSync(root)) {
       rmSync(root, { recursive: true, force: true })
@@ -18,6 +20,7 @@ describe('State Owner Database Rollback and Cross-Language Portability', () => {
   const releaseExe = resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
   const debugExe = resolve(process.cwd(), 'target', 'debug', 'dcm-manager.exe')
   const exePath = existsSync(releaseExe) ? releaseExe : debugExe
+  const fakeWorker = resolve(process.cwd(), 'tests', 'fakes', 'fake-mcp-worker.mjs')
 
   it(
     'preserves data and session bindings across Node -> Rust -> Node ownership transitions',
@@ -33,6 +36,8 @@ describe('State Owner Database Rollback and Cross-Language Portability', () => {
       const runtimeRoot = join(root, 'workers')
 
       process.env.DCM_SUPERVISOR_MUTEX_NAME = `Local\\DesktopCommanderManager.RollbackTest.${process.pid}`
+      process.env.DCM_WORKER_COMMAND = process.execPath
+      process.env.DCM_WORKER_ARGS = JSON.stringify([fakeWorker])
 
       const rpc = async (url: string, method: string, id: string | number, params: Record<string, unknown>) => {
         const res = await fetch(url, {
@@ -69,7 +74,7 @@ describe('State Owner Database Rollback and Cross-Language Portability', () => {
           'openai/session': 'session-node-created',
         }
         const call = await rpc(nodeRuntime.mcpUrl, 'tools/call', 1, {
-          name: 'get_config',
+          name: 'identify',
           arguments: {},
           _meta: envelope,
         })
@@ -110,7 +115,7 @@ describe('State Owner Database Rollback and Cross-Language Portability', () => {
           'openai/session': 'session-rust-created',
         }
         const call = await rpc(rustRuntime.mcpUrl, 'tools/call', 2, {
-          name: 'get_config',
+          name: 'identify',
           arguments: {},
           _meta: rustEnvelope,
         })
