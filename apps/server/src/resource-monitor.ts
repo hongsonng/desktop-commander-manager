@@ -1,6 +1,7 @@
 import { execFile } from 'node:child_process'
 import { cpus, freemem, totalmem } from 'node:os'
 import { promisify } from 'node:util'
+import type { CapabilityOwner, NativeSidecarClient } from './native-sidecar.js'
 
 const execFileAsync = promisify(execFile)
 
@@ -23,20 +24,47 @@ export interface ResourceUsageSnapshot {
   error?: string
 }
 
-type RawUsage = {
+export type RawUsage = {
   rootPid: number | null
   memoryBytes: number
   cpuSeconds: number
   processCount: number
 }
 
-type RawSnapshot = {
+export type RawSnapshot = {
   manager: RawUsage
   tunnel: RawUsage
   workers: RawUsage[]
 }
 
-type WorkerPid = { id: string; name: string; pid: number | null }
+export type WorkerPid = { id: string; name: string; pid: number | null }
+
+export interface ResourceCollector {
+  collect(managerPid: number, workerPids: number[]): Promise<RawSnapshot>
+}
+
+export interface ShadowComparisonRecord {
+  sampledAt: string
+  node: RawSnapshot
+  rust: RawSnapshot
+  match: {
+    managerCountMatch: boolean
+    tunnelCountMatch: boolean
+    workerCountMatch: boolean
+  }
+}
+
+export interface ResourceMonitorOptions {
+  owner?: CapabilityOwner
+  nodeCollector?: ResourceCollector
+  rustCollector?: ResourceCollector
+  onShadowComparison?: (comparison: ShadowComparisonRecord) => void
+}
+
+export interface ResourceMonitor {
+  snapshot(): Promise<ResourceUsageSnapshot>
+  close?(): Promise<void>
+}
 
 type CpuTicks = { idle: number; total: number }
 
@@ -138,10 +166,37 @@ async function collectRawUsage(managerPid: number, workerPids: number[]): Promis
   return JSON.parse(stdout.trim()) as RawSnapshot
 }
 
-export function createResourceMonitor(getWorkers: () => WorkerPid[]) {
+export function createPowerShellResourceCollector(): ResourceCollector {
+  return {
+    async collect(managerPid: number, workerPids: number[]): Promise<RawSnapshot> {
+      return collectRawUsage(managerPid, workerPids)
+    },
+  }
+}
+
+export function createNativeResourceCollector(client: NativeSidecarClient): ResourceCollector {
+  return {
+    async collect(managerPid: number, workerPids: number[]): Promise<RawSnapshot> {
+      return client.snapshot({
+        managerPid,
+        workerPids,
+        tunnelProfile: 'desktop-commander-manager',
+      })
+    },
+  }
+}
+
+export function createResourceMonitor(
+  getWorkers: () => WorkerPid[],
+  options: ResourceMonitorOptions = {},
+): ResourceMonitor {
   const previousCpu = new Map<string, number>()
   let previousAt = Date.now()
   let previousSystem = readSystemCpuTicks()
+
+  const owner = options.owner ?? 'node'
+  const nodeCollector = options.nodeCollector ?? createPowerShellResourceCollector()
+  const rustCollector = options.rustCollector
 
   return {
     async snapshot(): Promise<ResourceUsageSnapshot> {
@@ -153,7 +208,34 @@ export function createResourceMonitor(getWorkers: () => WorkerPid[]) {
       const workerPids = workers.flatMap((worker) => worker.pid ? [worker.pid] : [])
 
       try {
-        const raw = await collectRawUsage(process.pid, workerPids)
+        let raw: RawSnapshot
+        if (owner === 'rust') {
+          if (!rustCollector) throw new Error('Rust collector is required when owner is "rust"')
+          raw = await rustCollector.collect(process.pid, workerPids)
+        } else if (owner === 'shadow') {
+          raw = await nodeCollector.collect(process.pid, workerPids)
+          if (rustCollector) {
+            rustCollector.collect(process.pid, workerPids).then((rustRaw) => {
+              if (options.onShadowComparison) {
+                options.onShadowComparison({
+                  sampledAt,
+                  node: raw,
+                  rust: rustRaw,
+                  match: {
+                    managerCountMatch: raw.manager.processCount === rustRaw.manager.processCount,
+                    tunnelCountMatch: raw.tunnel.processCount === rustRaw.tunnel.processCount,
+                    workerCountMatch: raw.workers.length === rustRaw.workers.length,
+                  },
+                })
+              }
+            }).catch(() => {
+              // Shadow errors never impact the authoritative response
+            })
+          }
+        } else {
+          raw = await nodeCollector.collect(process.pid, workerPids)
+        }
+
         const rawByPid = new Map(raw.workers.map((item) => [item.rootPid, item]))
         const items: ResourceProcessUsage[] = []
 

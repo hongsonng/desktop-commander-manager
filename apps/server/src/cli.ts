@@ -1,7 +1,7 @@
 import { fileURLToPath } from 'node:url'
 import { join, resolve } from 'node:path'
 import { startManager } from './main.js'
-import type { ManagerConfig } from './config.js'
+import type { CapabilityOwner, ManagerConfig } from './config.js'
 
 export {
   WINDOWS_AUTOSTART_TASK_NAME,
@@ -17,14 +17,28 @@ export {
   createWindowsRunKeySetSpec,
 } from './windows-autostart.js'
 
-export function createDefaultManagerConfig(root = process.cwd()): ManagerConfig {
+export function parseCapabilityOwner(value: string | undefined): CapabilityOwner {
+  if (!value) return 'rust'
+  const normalized = value.trim().toLowerCase()
+  if (normalized === 'node' || normalized === 'rust' || normalized === 'shadow') {
+    return normalized
+  }
+  throw new Error(`Invalid DCM_PLATFORM_OWNER "${value}". Valid options are: node, rust, shadow.`)
+}
+
+export function createDefaultManagerConfig(root = process.cwd(), env = process.env): ManagerConfig {
   const repoRoot = resolve(root)
+  const platformOwner = parseCapabilityOwner(env.DCM_PLATFORM_OWNER)
+  const nativeSidecarPath = env.DCM_NATIVE_SIDECAR_PATH ?? join(repoRoot, 'target', 'release', 'dcm-manager.exe')
+
   return {
     databasePath: join(repoRoot, 'data', 'manager.db'),
     runtimeRoot: join(repoRoot, 'data', 'workers'),
     dashboardDir: join(repoRoot, 'apps', 'dashboard', 'dist'),
     mcpPort: 8787,
     managementPort: 8788,
+    platformOwner,
+    nativeSidecarPath,
   }
 }
 

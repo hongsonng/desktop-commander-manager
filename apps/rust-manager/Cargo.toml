@@ -1,0 +1,14 @@
+[package]
+name = "dcm-manager"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+
+[dependencies]
+manager-protocol = { path = "../../crates/manager-protocol" }
+manager-platform = { path = "../../crates/manager-platform" }
+manager-windows = { path = "../../crates/manager-windows" }
+serde.workspace = true
+serde_json.workspace = true
+tokio.workspace = true

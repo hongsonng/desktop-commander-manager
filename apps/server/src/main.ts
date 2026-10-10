@@ -12,7 +12,11 @@ import {
 } from '@dc-manager/worker-manager'
 import { createMcpHttpServer } from './mcp-server.js'
 import { createManagementApi } from './management-api.js'
-import { createResourceMonitor } from './resource-monitor.js'
+import { NativeSidecarClient } from './native-sidecar.js'
+import {
+  createNativeResourceCollector,
+  createResourceMonitor,
+} from './resource-monitor.js'
 import { DEFAULT_MANAGEMENT_PORT, DEFAULT_MCP_PORT, type ManagerConfig } from './config.js'
 
 interface WorkerClientFactory {
@@ -22,6 +26,7 @@ interface WorkerClientFactory {
 type Overrides = {
   processFactory?: DesktopCommanderProcessFactory
   workerClientFactory?: WorkerClientFactory
+  sidecarClient?: NativeSidecarClient
 }
 
 export interface ManagerRuntime {
@@ -118,7 +123,32 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       await workerManager.disableWorker(id)
     },
   }
-  const resourceMonitor = createResourceMonitor(() => database.workers.listWorkers().map((worker) => ({ id: worker.id, name: worker.name, pid: worker.pid })))
+
+  const platformOwner = config.platformOwner ?? 'node'
+  let sidecarClient = overrides.sidecarClient ?? null
+  const shouldCloseSidecar = !overrides.sidecarClient
+
+  if (!sidecarClient && (platformOwner === 'rust' || platformOwner === 'shadow')) {
+    const sidecarPath = config.nativeSidecarPath ?? resolve(process.cwd(), 'target', 'release', 'dcm-manager.exe')
+    try {
+      sidecarClient = await NativeSidecarClient.start(sidecarPath)
+    } catch (sidecarErr) {
+      if (platformOwner === 'rust') {
+        throw new Error(`Failed to start native sidecar for owner="rust": ${sidecarErr}`)
+      } else {
+        console.warn(`[startManager] Native sidecar failed to start in shadow mode: ${sidecarErr}`)
+      }
+    }
+  }
+
+  const rustCollector = sidecarClient ? createNativeResourceCollector(sidecarClient) : undefined
+  const resourceMonitor = createResourceMonitor(
+    () => database.workers.listWorkers().map((worker) => ({ id: worker.id, name: worker.name, pid: worker.pid })),
+    {
+      owner: platformOwner,
+      rustCollector,
+    },
+  )
 
   const defaultDashboardDir = resolve(process.cwd(), 'apps', 'dashboard', 'dist')
   const dashboardDir = config.dashboardDir ?? (existsSync(defaultDashboardDir) ? defaultDashboardDir : undefined)
@@ -146,6 +176,9 @@ export async function startManager(config: ManagerConfig, overrides: Overrides =
       for (const client of clients.values()) await client.close().catch(() => undefined)
       clients.clear()
       for (const worker of database.workers.listWorkers()) await workerManager.stopWorker(worker.id).catch(() => undefined)
+      if (sidecarClient && shouldCloseSidecar) {
+        await sidecarClient.close().catch(() => undefined)
+      }
       database.close()
     },
   }
