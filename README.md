@@ -108,24 +108,45 @@ Bây giờ trong khung chat của ChatGPT, bạn có thể ra lệnh trực ti�
 
 ---
 
-### Phương thức 2: Kết nối qua Cloudflare Tunnel hoặc ngrok
+### Phương thức 2: Dùng ChatGPT theo kiểu Plugin truyền thống (Custom GPT Actions / OpenAPI)
 
-Nếu bạn chưa đăng ký OpenAI Secure MCP Tunnel trên OpenAI Platform, bạn có thể tạo một HTTPS URL công khai an toàn bằng ngrok hoặc Cloudflare Tunnel:
+Nếu bạn muốn sử dụng giao diện gọi công cụ giống hệt **ChatGPT Plugins** trước đây (hiển thị nút bấm xác nhận, gọi API trực tiếp theo chuẩn OpenAPI):
 
-#### Sử dụng ngrok:
-```bash
-ngrok http 8787
-```
-Bạn sẽ nhận được một URL HTTPS (ví dụ: `https://your-domain.ngrok-free.app`).  
-URL MCP endpoint của bạn sẽ là:  
-`https://your-domain.ngrok-free.app/mcp`
+OpenAI đã thay thế Plugins cũ bằng cơ chế **Custom GPTs Actions**. Bạn có thể tạo một GPT riêng chỉ trong 2 phút:
 
-#### Sử dụng Cloudflare Tunnel:
-```bash
-cloudflared tunnel --url http://127.0.0.1:8787
-```
+#### Bước 1: Mở cổng public HTTPS an toàn bằng Cloudflare hoặc ngrok
+Custom GPTs của OpenAI yêu cầu endpoint phải có giao thức `https://`. Bạn có thể dùng 1 trong 2 công cụ miễn phí sau:
+* **Cách A - ngrok:**
+  ```bash
+  ngrok http 8787
+  ```
+  *(Bạn nhận được URL dạng: `https://xxxx-xx-xx.ngrok-free.app`)*
+* **Cách B - Cloudflare Tunnel (Miễn phí, không giới hạn):**
+  ```bash
+  cloudflared tunnel --url http://127.0.0.1:8787
+  ```
+  *(Bạn nhận được URL dạng: `https://xxxx-xx-xx.trycloudflare.com`)*
 
-Dán URL endpoint HTTPS này vào phần cấu hình MCP Server của ChatGPT hoặc Custom GPT Action.
+#### Bước 2: Tạo Custom GPT
+1. Truy cập [GPT Builder](https://chatgpt.com/gpts/editor) (dành cho tài khoản Plus, Team, Enterprise).
+2. Vào tab **Configure**:
+   * **Name:** `Desktop Commander`
+   * **Description:** `Trợ lý điều khiển và quản lý máy tính cá nhân an toàn.`
+   * **Instructions:**
+     ```text
+     Bạn là trợ lý điều khiển máy tính cá nhân thông qua Desktop Commander Manager.
+     Khi người dùng yêu cầu chạy lệnh, đọc/ghi file hoặc kiểm tra hệ thống, hãy sử dụng các Action tương ứng.
+     Luôn xác nhận trước khi thực hiện các lệnh nguy hiểm.
+     ```
+3. Kéo xuống mục **Actions**, nhấn **Create new action**.
+4. Ở ô **Schema**, sao chép và dán toàn bộ nội dung từ file:
+   👉 [`docs/chatgpt-openapi-schema.json`](docs/chatgpt-openapi-schema.json)
+5. Trong nội dung vừa dán, thay thế `"https://YOUR_TUNNEL_URL"` ở phần `servers` bằng URL HTTPS bạn nhận được ở Bước 1 (ví dụ: `https://xxxx.trycloudflare.com`).
+6. Mục **Authentication**: Chọn **None** (nếu chạy nội bộ) hoặc **API Key**.
+
+#### Bước 3: Lưu và bắt đầu sử dụng
+1. Nhấn **Save** ở góc trên bên phải (chọn *Only me* để sử dụng riêng tư).
+2. Mở cuộc trò chuyện với GPT vừa tạo: Mỗi khi bạn ra lệnh, ChatGPT sẽ hiển thị thông báo gọi Plugin/Action và gửi yêu cầu trực tiếp về máy bạn!
 
 ---
 

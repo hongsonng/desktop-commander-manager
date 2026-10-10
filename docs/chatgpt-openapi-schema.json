@@ -1,0 +1,129 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Desktop Commander Manager API",
+    "description": "ChatGPT Action plugin interface for controlling and interacting with your local computer via Desktop Commander Manager.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "https://YOUR_TUNNEL_URL",
+      "description": "Your secure tunnel endpoint (e.g. Cloudflare Tunnel, ngrok, or custom reverse proxy)"
+    }
+  ],
+  "paths": {
+    "/api/health": {
+      "get": {
+        "operationId": "checkHealth",
+        "summary": "Check manager health status",
+        "description": "Verifies that Desktop Commander Manager and its workers are operational.",
+        "responses": {
+          "200": {
+            "description": "Manager is healthy",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": { "type": "string" },
+                    "version": { "type": "string" },
+                    "workers": {
+                      "type": "object",
+                      "properties": {
+                        "total": { "type": "integer" },
+                        "ready": { "type": "integer" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/resources": {
+      "get": {
+        "operationId": "getSystemResources",
+        "summary": "Get system and worker resource metrics",
+        "description": "Retrieves real-time CPU and RAM usage for manager and Desktop Commander workers.",
+        "responses": {
+          "200": {
+            "description": "System resource metrics",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/workers": {
+      "get": {
+        "operationId": "listWorkers",
+        "summary": "List all Desktop Commander workers",
+        "description": "Returns status, PID, and health information of each local worker.",
+        "responses": {
+          "200": {
+            "description": "List of active workers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/mcp": {
+      "post": {
+        "operationId": "callMcpJsonRpc",
+        "summary": "Call local Desktop Commander MCP tools",
+        "description": "Executes MCP tool calls (execute_command, read_file, write_file, list_directory, etc.) via JSON-RPC 2.0.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["jsonrpc", "method", "id"],
+                "properties": {
+                  "jsonrpc": { "type": "string", "example": "2.0" },
+                  "method": { "type": "string", "example": "tools/call" },
+                  "id": { "type": "integer", "example": 1 },
+                  "params": {
+                    "type": "object",
+                    "properties": {
+                      "name": { "type": "string", "example": "execute_command" },
+                      "arguments": { "type": "object" }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "JSON-RPC response from local Desktop Commander",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
